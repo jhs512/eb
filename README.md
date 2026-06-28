@@ -9,10 +9,10 @@
 # Excel Brain (eb) — 에이전트의 무한·구조화된 기억
 
 > 원자료를 넣고, 질문하라. 에이전트가 **타입 지식 그래프**를 만들고·유지하고·탐색한다.
-> 단, ib와 달리 지식은 마크다운이 아니라 **스프레드시트(CSV) 묶음**에 살고,
+> 지식은 마크다운이 아니라 **스프레드시트(CSV) 묶음**에 살고,
 > 그래프 탐색은 프롬프트가 아니라 **결정적 Python 엔진이 보증**한다.
 
-[Infinite Brain(ib)](https://github.com/JotaSXBR/obsidian-infinite-brain)에 영감을 받아, 같은 "타입 있는 노드 · 타입 있는 엣지" 모델을 **표(CSV)** 로 재해석했다.
+[이 영상](https://www.youtube.com/watch?v=z02Y-1OvWSM)에서 영감을 받아, "타입 있는 노드 · 타입 있는 엣지" 지식 그래프를 **표(CSV)** 로 구현했다.
 
 ## 문제
 
@@ -20,19 +20,19 @@ AI 에이전트는 세션마다 잊는다. 개인 지식 시스템은 정보를 
 
 ## 5개의 스킬 (`.claude/skills/eb-*`)
 
-ib의 다섯 스킬과 1:1로 대응한다. 각 스킬은 얇은 오케스트레이터이고, 실제 일은 `eb.py`가 한다.
+각 스킬은 얇은 오케스트레이터이고, 실제 일은 `eb.py`가 한다.
 
-| 스킬 | 역할 | ib 대응 |
-|---|---|---|
-| **`eb-init`** | 현재 저장소에 엔진·씨앗 데이터 부트스트랩 | `init-vault` |
-| **`eb-capture`** | 원자료를 노드+엣지로 증류해 CSV에 반영(그래프-인지 캡처) | `convert-note` |
-| **`eb-recall`** | 그래프 조회/탐색 — 관련 서브그래프 | `query-vault` |
-| **`eb-curate`** | 중복 병합·고아 연결·촘촘화 | `organize-vault` |
-| **`eb-health`** | 신뢰도·고아·끊긴 엣지 점검(리뷰 큐) | `vault-health` |
+| 스킬 | 역할 |
+|---|---|
+| **`eb-init`** | 현재 저장소에 엔진·씨앗 데이터 부트스트랩 |
+| **`eb-capture`** | 원자료를 노드+엣지로 증류해 CSV에 반영(그래프-인지 캡처) |
+| **`eb-recall`** | 그래프 조회/탐색 — 관련 서브그래프 |
+| **`eb-curate`** | 중복 병합·고아 연결·촘촘화 |
+| **`eb-health`** | 신뢰도·고아·끊긴 엣지 점검(리뷰 큐) |
 
 ### 차별점 — 그래프 연산을 코드가 보증한다
 
-ib는 LLM이 그래프를 프롬프트로 다룬다. eb는 조회뿐 아니라 **쓰기에도 그래프 탐색**을 쓴다: `eb-capture`는 추가 *전에* 그래프를 조회해 중복을 잡고 연결처를 제안하며(`search`/`suggest`), `eb-curate`는 `merge`로 결정적으로 병합한다. 모두 stdlib only인 `eb.py`가 보증한다.
+eb는 조회뿐 아니라 **쓰기에도 그래프 탐색**을 쓴다: `eb-capture`는 추가 *전에* 그래프를 조회해 중복을 잡고 연결처를 제안하며(`search`/`suggest`), `eb-curate`는 `merge`로 결정적으로 병합한다. 그래프 연산을 프롬프트가 아니라 stdlib only `eb.py`가 결정적으로 보증한다.
 
 ## 빠른 시작
 
@@ -161,14 +161,13 @@ eb/
     └── sheets-sync.yml # (선택) 자동 동기화
 ```
 
-## ib와의 관계
+## 설계 한눈에
 
-| | Infinite Brain (ib) | Excel Brain (eb) |
-|---|---|---|
-| 원천 | 마크다운 노드 + frontmatter | **CSV 3개** |
-| 엔진 | 스킬(프롬프트) 기반 그래프 탐색 | **Python(SQLite 재귀 CTE + 구조 연산) — 결정적** |
-| 편집 | 에디터/Obsidian | **엑셀/구글시트/에디터** |
-| 제품 | 5스킬 | **5스킬 (init/capture/recall/curate/health)** |
-| 시트 | 마크다운 → 시트 미러(증분) | CSV → 시트 동기화(overwrite) |
+| 측면 | Excel Brain (eb) |
+|---|---|
+| 지식의 원천 | **CSV 3개** (엑셀/구글시트/에디터로 편집) |
+| 엔진 | **Python(SQLite 재귀 CTE + 구조 연산) — 결정적**, stdlib only |
+| 제품 | **5스킬** (init/capture/recall/curate/health) |
+| 시트 | CSV → 시트 동기화(overwrite, 선택) |
 
 [MIT](LICENSE)

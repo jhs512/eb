@@ -130,6 +130,8 @@ CSV가 여전히 단일 원천이며, 파일 DB는 캐시일 뿐이다(staleness
 
 CSV가 원천이고 시트는 파생되는 **뷰**다. 3개의 CSV를 같은 이름의 탭(`_data`/`_edges`/`_meta`)으로 단방향 동기화한다.
 
+> **온보딩 스킬(가이드형 셋업)**: 서비스 계정·키 발급과 시트 등록이 처음이면 두 스킬이 브라우저(+gcloud)로 도와준다 — `/eb-gcp`(Google 계정당 1회: 프로젝트·API·서비스계정·JSON 키 → `~/.config/eb/sheets-sync.env`) → `/eb-sheets`(이 저장소: `지식` 시트 생성·서비스계정 공유·`gh` secret/variable·초기 동기화). 아래 수동 단계를 자동화한 것이다. 자세한 결정은 [ADR-0005](docs/adr/0005-sheets-onboarding-skills.md).
+
 ```bash
 pip install -r requirements.txt        # gspread, google-auth (sync 전용)
 export GOOGLE_APPLICATION_CREDENTIALS=~/.config/eb/sa-key.json

@@ -14,14 +14,20 @@
   python eb.py node pillar-knowledge-graph
   python eb.py neighbors pillar-knowledge-graph --depth 2 --direction both
   python eb.py path decision-csv-source pillar-knowledge-graph
+  python eb.py path decision-csv-source pillar-knowledge-graph --weighted
+  python eb.py components
+  python eb.py degree --top 5
   python eb.py orphans
   python eb.py validate
   python eb.py types
+  python eb.py add-node --id playbook-x --title "엑스" --type playbook --tags "a;b"
+  python eb.py add-edge --source playbook-x --type depends_on --target concept-typed-node
 """
 from __future__ import annotations
 
 import argparse
 import csv
+import heapq
 import sqlite3
 import sys
 from pathlib import Path
@@ -101,6 +107,71 @@ def _to_float(v):
 
 
 # --------------------------------------------------------------------------- #
+# Write: CSV 안전 추가 (add-node / add-edge)
+# --------------------------------------------------------------------------- #
+def _append_row(path: Path, cols: list[str], row: dict) -> None:
+    """CSV에 1행 안전 추가. 파일이 없으면 헤더부터, 마지막 줄에 개행이 없으면 보강한다."""
+    has_data = path.exists() and path.stat().st_size > 0
+    need_nl = False
+    if has_data:
+        with path.open("rb") as f:
+            f.seek(-1, 2)
+            need_nl = f.read(1) != b"\n"
+    with path.open("a", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=cols, lineterminator="\n")
+        if not has_data:
+            w.writeheader()
+        elif need_nl:
+            f.write("\n")
+        w.writerow({c: row.get(c, "") for c in cols})
+
+
+def add_node(data_dir: str, *, id: str, title: str, type: str = None,
+             namespace: str = None, visibility: str = None, summary: str = None,
+             confidence=None, tags: str = None, body: str = None) -> str:
+    """nodes.csv 에 노드 1행을 추가한다. id 가 비었거나 이미 있으면 ValueError."""
+    nid = (id or "").strip()
+    if not nid:
+        raise ValueError("id는 비어 있을 수 없습니다")
+    path = Path(data_dir) / NODES_FILE
+    existing = {(r.get("id") or "").strip() for r in _read_csv(path)}
+    if nid in existing:
+        raise ValueError(f"이미 존재하는 노드 id: {nid}")
+    _append_row(path, NODE_COLS, {
+        "id": nid, "title": title or "", "type": type or "",
+        "namespace": namespace or "", "visibility": visibility or "",
+        "summary": summary or "",
+        "confidence": "" if confidence is None else confidence,
+        "tags": tags or "", "body": body or "",
+    })
+    return nid
+
+
+def add_edge(data_dir: str, *, source: str, type: str, target: str,
+             weight=None, note: str = None, allow_missing: bool = False):
+    """edges.csv 에 엣지 1행을 추가한다.
+
+    source/target 노드가 nodes.csv 에 없으면 ValueError(allow_missing 이면 허용).
+    """
+    s = (source or "").strip()
+    t = (target or "").strip()
+    if not s or not t:
+        raise ValueError("source와 target은 필수입니다")
+    base = Path(data_dir)
+    if not allow_missing:
+        node_ids = {(r.get("id") or "").strip() for r in _read_csv(base / NODES_FILE)}
+        missing = [x for x in (s, t) if x not in node_ids]
+        if missing:
+            raise ValueError(
+                f"없는 노드 참조: {', '.join(missing)} (--allow-missing 으로 무시 가능)")
+    _append_row(base / EDGES_FILE, EDGE_COLS, {
+        "source": s, "type": type or "", "target": t,
+        "weight": "" if weight is None else weight, "note": note or "",
+    })
+    return (s, type, t)
+
+
+# --------------------------------------------------------------------------- #
 # Graph operations (SQLite 재귀 CTE)
 # --------------------------------------------------------------------------- #
 def _adjacency(direction: str) -> str:
@@ -156,6 +227,55 @@ def shortest_path(conn, src: str, dst: str, direction: str = "out"):
     return [p for p in row["path"].split(">") if p]
 
 
+def _weighted_adjacency(conn, direction: str) -> dict:
+    """방향별 가중 인접 리스트: {a: [(b, weight), ...]}."""
+    adj: dict = {}
+    for r in conn.execute("SELECT source, target, weight FROM edges").fetchall():
+        s, t, w = r["source"], r["target"], r["weight"]
+        if direction in ("out", "both"):
+            adj.setdefault(s, []).append((t, w))
+        if direction in ("in", "both"):
+            adj.setdefault(t, []).append((s, w))
+    return adj
+
+
+def weighted_shortest_path(conn, src: str, dst: str, direction: str = "out",
+                           default_weight: float = 1.0):
+    """src -> dst 가중 최단 경로(다익스트라). weight 를 엣지 비용(거리)으로 사용한다.
+
+    weight 가 None 이거나 양수가 아니면 default_weight 로 대체한다.
+    반환: (경로 노드 id 리스트, 총비용) 또는 도달 불가 시 None.
+    """
+    if src == dst:
+        return ([src], 0.0)
+    adj = _weighted_adjacency(conn, direction)
+    dist = {src: 0.0}
+    prev: dict = {}
+    pq = [(0.0, src)]
+    visited = set()
+    while pq:
+        d, u = heapq.heappop(pq)
+        if u in visited:
+            continue
+        visited.add(u)
+        if u == dst:
+            break
+        for v, w in adj.get(u, []):
+            cost = w if (w is not None and w > 0) else default_weight
+            nd = d + cost
+            if v not in dist or nd < dist[v]:
+                dist[v] = nd
+                prev[v] = u
+                heapq.heappush(pq, (nd, v))
+    if dst not in dist:
+        return None
+    path = [dst]
+    while path[-1] != src:
+        path.append(prev[path[-1]])
+    path.reverse()
+    return (path, dist[dst])
+
+
 def orphans(conn):
     """엣지가 하나도 없는 노드(고아)."""
     sql = """
@@ -165,6 +285,56 @@ def orphans(conn):
     ORDER BY id
     """
     return [r["id"] for r in conn.execute(sql).fetchall()]
+
+
+def components(conn):
+    """약연결 요소(엣지를 무방향으로 간주). 각 요소는 정렬된 노드 id 리스트.
+
+    크기 내림차순, 동률은 첫 id 사전순으로 정렬해 반환한다.
+    없는 노드를 참조하는 끊긴 엣지는 무시한다.
+    """
+    node_ids = [r["id"] for r in conn.execute("SELECT id FROM nodes").fetchall()]
+    parent = {nid: nid for nid in node_ids}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]  # 경로 압축
+            x = parent[x]
+        return x
+
+    for r in conn.execute("SELECT source, target FROM edges").fetchall():
+        s, t = r["source"], r["target"]
+        if s in parent and t in parent:
+            ra, rb = find(s), find(t)
+            if ra != rb:
+                parent[rb] = ra
+
+    groups: dict = {}
+    for nid in node_ids:
+        groups.setdefault(find(nid), []).append(nid)
+    comps = [sorted(g) for g in groups.values()]
+    comps.sort(key=lambda c: (-len(c), c[0]))
+    return comps
+
+
+def degree_distribution(conn):
+    """노드별 in/out/total 차수 + 차수 히스토그램(차수 중심성 근거)."""
+    deg = {r["id"]: {"in": 0, "out": 0}
+           for r in conn.execute("SELECT id FROM nodes").fetchall()}
+    for r in conn.execute("SELECT source, target FROM edges").fetchall():
+        if r["source"] in deg:
+            deg[r["source"]]["out"] += 1
+        if r["target"] in deg:
+            deg[r["target"]]["in"] += 1
+    per_node = [
+        {"id": nid, "in": d["in"], "out": d["out"], "total": d["in"] + d["out"]}
+        for nid, d in deg.items()
+    ]
+    per_node.sort(key=lambda x: (-x["total"], x["id"]))
+    hist: dict = {}
+    for x in per_node:
+        hist[x["total"]] = hist.get(x["total"], 0) + 1
+    return {"per_node": per_node, "histogram": dict(sorted(hist.items()))}
 
 
 def node_detail(conn, node_id: str):
@@ -266,6 +436,7 @@ def main(argv=None):
     sub.add_parser("orphans", help="고아 노드 목록")
     sub.add_parser("validate", help="무결성 검사")
     sub.add_parser("types", help="노드/엣지 타입별 개수")
+    sub.add_parser("components", help="약연결 요소(무방향)")
 
     sp = sub.add_parser("node", help="노드 상세 + 엣지/백링크")
     sp.add_argument("id")
@@ -279,8 +450,61 @@ def main(argv=None):
     sp.add_argument("src")
     sp.add_argument("dst")
     sp.add_argument("--direction", choices=["out", "in", "both"], default="out")
+    sp.add_argument("--weighted", action="store_true",
+                    help="weight를 비용으로 한 가중 최단경로(다익스트라)")
+    sp.add_argument("--default-weight", type=float, default=1.0,
+                    help="weight 누락 시 사용할 기본 비용(기본 1.0)")
+
+    sp = sub.add_parser("degree", help="차수 분포 / 차수 중심성")
+    sp.add_argument("--top", type=int, default=10)
+
+    sp = sub.add_parser("add-node", help="nodes.csv에 노드 추가(중복 id 검사)")
+    sp.add_argument("--id", required=True)
+    sp.add_argument("--title", required=True)
+    sp.add_argument("--type")
+    sp.add_argument("--namespace")
+    sp.add_argument("--visibility")
+    sp.add_argument("--summary")
+    sp.add_argument("--confidence", type=float)
+    sp.add_argument("--tags", help="세미콜론(;) 구분")
+    sp.add_argument("--body")
+
+    sp = sub.add_parser("add-edge", help="edges.csv에 엣지 추가(노드 존재 검사)")
+    sp.add_argument("--source", required=True)
+    sp.add_argument("--type", required=True)
+    sp.add_argument("--target", required=True)
+    sp.add_argument("--weight", type=float)
+    sp.add_argument("--note")
+    sp.add_argument("--allow-missing", action="store_true",
+                    help="source/target 노드가 없어도 추가 허용")
 
     args = p.parse_args(argv)
+
+    # 쓰기 명령은 CSV를 직접 다루므로 DB 적재가 필요 없다.
+    if args.cmd == "add-node":
+        try:
+            nid = add_node(
+                args.data, id=args.id, title=args.title, type=args.type,
+                namespace=args.namespace, visibility=args.visibility,
+                summary=args.summary, confidence=args.confidence,
+                tags=args.tags, body=args.body)
+        except ValueError as ex:
+            print(f"✗ {ex}")
+            return 1
+        print(f"✓ 노드 추가: {nid}")
+        return 0
+
+    if args.cmd == "add-edge":
+        try:
+            s, ty, t = add_edge(
+                args.data, source=args.source, type=args.type, target=args.target,
+                weight=args.weight, note=args.note, allow_missing=args.allow_missing)
+        except ValueError as ex:
+            print(f"✗ {ex}")
+            return 1
+        print(f"✓ 엣지 추가: {s} -{ty}-> {t}")
+        return 0
+
     conn = load_db(args.data)
 
     if args.cmd == "stats":
@@ -326,11 +550,37 @@ def main(argv=None):
             print(f"  [{r['dist']}] {r['id']}")
 
     elif args.cmd == "path":
-        path = shortest_path(conn, args.src, args.dst, args.direction)
-        if path is None:
-            print("(경로 없음)")
-            return 1
-        print(" -> ".join(path) + f"   (홉 {len(path) - 1})")
+        if args.weighted:
+            res = weighted_shortest_path(conn, args.src, args.dst, args.direction,
+                                         args.default_weight)
+            if res is None:
+                print("(경로 없음)")
+                return 1
+            path, cost = res
+            print(" -> ".join(path)
+                  + f"   (홉 {len(path) - 1}, 비용 {round(cost, 4)})")
+        else:
+            path = shortest_path(conn, args.src, args.dst, args.direction)
+            if path is None:
+                print("(경로 없음)")
+                return 1
+            print(" -> ".join(path) + f"   (홉 {len(path) - 1})")
+
+    elif args.cmd == "components":
+        comps = components(conn)
+        print(f"연결 요소: {len(comps)}개")
+        for i, c in enumerate(comps, 1):
+            head = ", ".join(c[:8]) + (" ..." if len(c) > 8 else "")
+            print(f"  #{i} (크기 {len(c)}): {head}")
+
+    elif args.cmd == "degree":
+        dd = degree_distribution(conn)
+        print("차수 히스토그램 (차수: 노드수):")
+        for k, v in dd["histogram"].items():
+            print(f"  {k}: {v}")
+        print(f"상위 {args.top} (차수 중심성):")
+        for x in dd["per_node"][:args.top]:
+            print(f"  {x['total']:>3}  {x['id']}  (in={x['in']} out={x['out']})")
 
     return 0
 

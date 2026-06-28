@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import csv
 import heapq
+import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -574,6 +575,59 @@ def review_queue(conn, confidence_threshold: float = 0.6) -> dict:
             "dangling": dangling, "missing_fields": missing}
 
 
+def _node_ids(conn) -> set:
+    return {r["id"] for r in conn.execute("SELECT id FROM nodes").fetchall()}
+
+
+def _valid_edges(conn):
+    """양 끝이 모두 노드인 엣지만(끊긴 엣지 제외) — 뷰 export 용."""
+    ids = _node_ids(conn)
+    rows = conn.execute(
+        "SELECT source, type, target, weight FROM edges ORDER BY source, target"
+    ).fetchall()
+    return [r for r in rows if r["source"] in ids and r["target"] in ids]
+
+
+def _mermaid_id(s: str) -> str:
+    """mermaid 노드 id로 안전화(영숫자·밑줄만)."""
+    return "".join(c if (c.isalnum() or c == "_") else "_" for c in s) or "n"
+
+
+def export_mermaid(conn, direction: str = "LR") -> str:
+    """그래프를 Mermaid flowchart 텍스트로. (깃허브 마크다운에 바로 렌더)"""
+    lines = [f"graph {direction}"]
+    for n in conn.execute("SELECT id, title FROM nodes ORDER BY id").fetchall():
+        label = (n["title"] or n["id"]).replace('"', "'")
+        lines.append(f'  {_mermaid_id(n["id"])}["{label}"]')
+    for e in _valid_edges(conn):
+        lines.append(
+            f'  {_mermaid_id(e["source"])} -->|{e["type"] or ""}| {_mermaid_id(e["target"])}')
+    return "\n".join(lines)
+
+
+def export_dot(conn) -> str:
+    """그래프를 Graphviz DOT 텍스트로. (dot -Tsvg 등으로 렌더)"""
+    lines = ["digraph eb {", "  rankdir=LR;"]
+    for n in conn.execute("SELECT id, title FROM nodes ORDER BY id").fetchall():
+        label = (n["title"] or n["id"]).replace('"', "'")
+        lines.append(f'  "{n["id"]}" [label="{label}"];')
+    for e in _valid_edges(conn):
+        lines.append(f'  "{e["source"]}" -> "{e["target"]}" [label="{e["type"] or ""}"];')
+    lines.append("}")
+    return "\n".join(lines)
+
+
+def export_json(conn) -> dict:
+    """그래프를 {nodes:[...], edges:[...]} 로. (d3/cytoscape/vis.js 등)"""
+    nodes = [dict(r) for r in conn.execute(
+        "SELECT id, title, type, namespace, visibility, confidence, tags "
+        "FROM nodes ORDER BY id").fetchall()]
+    edges = [{"source": e["source"], "type": e["type"],
+              "target": e["target"], "weight": e["weight"]}
+             for e in _valid_edges(conn)]
+    return {"nodes": nodes, "edges": edges}
+
+
 def validate(conn):
     """무결성 검사: 끊긴 엣지, 빈 필드 등."""
     issues = []
@@ -650,6 +704,10 @@ def main(argv=None):
     sp = sub.add_parser("search", help="노드 검색(title/summary/tags/body 부분일치)")
     sp.add_argument("query")
     sp.add_argument("--limit", type=int, default=20)
+
+    sp = sub.add_parser("export", help="그래프를 다른 뷰로 추출(mermaid/dot/json)")
+    sp.add_argument("--format", choices=["mermaid", "dot", "json"], default="mermaid")
+    sp.add_argument("--direction", default="LR", help="mermaid 방향(LR/TB 등)")
 
     sp = sub.add_parser("suggest", help="연결 후보 제안(공통 이웃 + 태그 자카드)")
     sp.add_argument("id")
@@ -784,6 +842,14 @@ def main(argv=None):
             for i in issues:
                 print(f"  - {i}")
             return 1
+
+    elif args.cmd == "export":
+        if args.format == "mermaid":
+            print(export_mermaid(conn, args.direction))
+        elif args.format == "dot":
+            print(export_dot(conn))
+        else:
+            print(json.dumps(export_json(conn), ensure_ascii=False, indent=2))
 
     elif args.cmd == "search":
         res = search(conn, args.query, args.limit)

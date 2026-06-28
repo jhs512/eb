@@ -1,6 +1,8 @@
-# 그래프를 다른 뷰로 추출 (export: mermaid/dot/json)
+# 그래프를 다른 뷰로 추출 (export: mermaid/dot/json/graphml + 스코프)
 
-`eb.py`에 `export` 명령을 추가해 그래프를 엑셀/시트가 아닌 **다른 뷰**로 뽑는다 — `--format mermaid`(깃허브 마크다운에 바로 렌더) · `dot`(Graphviz) · `json`(d3/cytoscape/vis.js). 전부 stdlib only·결정적이라 단위테스트로 박제한다. 끊긴 엣지(없는 노드 참조)는 뷰에서 제외한다.
+`eb.py`에 `export` 명령을 추가해 그래프를 엑셀/시트가 아닌 **다른 뷰**로 뽑는다 — `--format mermaid`(깃허브 마크다운에 바로 렌더) · `dot`(Graphviz) · `json`(d3/cytoscape.js/sigma.js) · `graphml`(**Gephi** 등 전문 대규모 분석 도구). 전부 stdlib only·결정적이라 단위테스트로 박제한다. 끊긴 엣지(없는 노드 참조)는 뷰에서 제외한다.
+
+**대규모 대응**: mermaid는 수백 노드부터 GitHub 렌더 한도·가독성에서 부적합하다. 그래서 (1) `--center <id> --depth N` 으로 **서브그래프만**(neighbors 스코프) 뽑아 mermaid를 작게 유지하고, (2) 전체 분석은 `graphml`→Gephi, `json`→sigma.js/cytoscape.js, `dot`→Graphviz sfdp 같은 **전문 툴**에 위임한다. "전체를 그리지 말고 쿼리 결과를 본다"가 원칙.
 
 ## 왜
 

@@ -184,6 +184,24 @@ class EbTest(unittest.TestCase):
         self.assertEqual(len(data["edges"]), 3)     # a->b, b->c, a->c (e->zzz 제외)
         self.assertTrue(all(e["target"] != "zzz" for e in data["edges"]))
 
+    def test_export_graphml_wellformed(self):
+        import xml.etree.ElementTree as ET
+        out = eb.export_graphml(self.conn)
+        root = ET.fromstring(out)                    # 파싱되면 well-formed
+        ns = "{http://graphml.graphdrawing.org/xmlns}"
+        g = root.find(f"{ns}graph")
+        self.assertEqual(len(g.findall(f"{ns}node")), 5)
+        self.assertEqual(len(g.findall(f"{ns}edge")), 3)   # 끊긴 엣지 제외
+
+    def test_export_scoped_by_subgraph(self):
+        only = eb.subgraph_ids(self.conn, "a", depth=1, direction="both")
+        self.assertEqual(only, {"a", "b", "c"})            # a + 이웃 b,c
+        data = eb.export_json(self.conn, only=only)
+        self.assertEqual({n["id"] for n in data["nodes"]}, {"a", "b", "c"})
+        self.assertNotIn("d", {n["id"] for n in data["nodes"]})  # 고아 제외
+        m = eb.export_mermaid(self.conn, only=only)
+        self.assertNotIn("d[", m)
+
     # --- 백로그 6: 파일 SQLite 적재/재사용 --------------------------------- #
     def test_file_db_build_and_reuse(self):
         db = self.dir / "graph.sqlite"

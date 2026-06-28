@@ -56,6 +56,18 @@ class SkillMetadataTest(unittest.TestCase):
             self.assertTrue(fm.get("description"), f"{d.name}: description 비어있음")
 
 
+class InstallScriptTest(unittest.TestCase):
+    def test_install_lists_all_skills(self):
+        import re as _re
+        txt = (ROOT / "install.sh").read_text(encoding="utf-8")
+        m = _re.search(r'SKILLS="([^"]+)"', txt)
+        self.assertIsNotNone(m, "install.sh 에 SKILLS= 목록 없음")
+        listed = set(m.group(1).split())
+        actual = {d.name for d in SKILL_DIRS}
+        self.assertEqual(listed, actual,
+                         "install.sh 스킬 목록이 실제 .claude/skills/eb-* 와 불일치")
+
+
 class DocCommandConsistencyTest(unittest.TestCase):
     def test_referenced_eb_commands_exist(self):
         valid = _eb_commands()

@@ -36,14 +36,20 @@ eb는 조회뿐 아니라 **쓰기에도 그래프 탐색**을 쓴다: `eb-learn
 
 ## 설치
 
-다른 저장소(또는 빈 폴더)에서 eb 스킬을 설치한다 — 설치 스크립트가 고정 ref에서 스킬을 `.claude/skills/`로 가져온다(별도 도구 불필요, `curl`만 필요):
+**권장 — 스킬 패키지 매니저** ([skills](https://www.npmjs.com/package/skills)). 7개 eb 스킬을 클론해 여러 에이전트(Claude Code 등)에 한 번에 설치한다:
+
+```bash
+npx skills@latest add jhs512/eb --all
+```
+
+**대안 — Node 없이 `curl`만.** 고정 ref에서 스킬을 현재 저장소의 `.claude/skills/`로 가져온다:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jhs512/eb/v0.5.1/install.sh -o eb-install.sh
 bash eb-install.sh               # 7개 eb 스킬을 .claude/skills/ 에 설치
 ```
 
-받은 스크립트는 실행 전에 열어 봐도 된다. 스킬 설치 스크립트는 [`install.sh`](install.sh). `skills-lock.json`으로 잠가 관리하려면 [`eb-setup` 스킬](.claude/skills/eb-setup/SKILL.md)의 예시 참고.
+받은 스크립트는 실행 전에 열어 봐도 된다([`install.sh`](install.sh)). `skills-lock.json`으로 잠가 관리하려면 [`eb-setup` 스킬](.claude/skills/eb-setup/SKILL.md)의 예시 참고.
 
 ## 빠른 시작
 

@@ -34,16 +34,23 @@ AI 에이전트는 세션마다 잊는다. 개인 지식 시스템은 정보를 
 
 eb는 조회뿐 아니라 **쓰기에도 그래프 탐색**을 쓴다: `eb-learn`는 추가 *전에* 그래프를 조회해 중복을 잡고 연결처를 제안하며(`search`/`suggest`), `eb-clean`는 `merge`로 결정적으로 병합한다. 그래프 연산을 프롬프트가 아니라 stdlib only `eb.py`가 결정적으로 보증한다.
 
-## 빠른 시작
+## 설치
 
-다른 저장소(또는 빈 폴더)에서 eb 스킬을 설치한다 — 설치 스크립트가 고정 ref에서 스킬을 `.claude/skills/`로 가져온다(별도 도구 불필요):
+다른 저장소(또는 빈 폴더)에서 eb 스킬을 설치한다 — 설치 스크립트가 고정 ref에서 스킬을 `.claude/skills/`로 가져온다(별도 도구 불필요, `curl`만 필요):
 
 ```bash
-# 0) 스킬 설치 (curl 만 필요). 받은 스크립트는 실행 전에 살펴봐도 된다.
 curl -fsSL https://raw.githubusercontent.com/jhs512/eb/v0.5.1/install.sh -o eb-install.sh
 bash eb-install.sh               # 7개 eb 스킬을 .claude/skills/ 에 설치
+```
 
-# 1) 그다음, 해당 저장소에서:
+받은 스크립트는 실행 전에 열어 봐도 된다. 스킬 설치 스크립트는 [`install.sh`](install.sh). `skills-lock.json`으로 잠가 관리하려면 [`eb-setup` 스킬](.claude/skills/eb-setup/SKILL.md)의 예시 참고.
+
+## 빠른 시작
+
+스킬을 설치했으면, 해당 저장소에서:
+
+```bash
+# 1) 엔진·씨앗 데이터 부트스트랩
 /eb-setup                        # jhs512/eb 의 고정 ref에서 eb.py·씨앗 CSV를 깔아준다
 
 # 2) 지식 쌓기 / 꺼내기 (에이전트가 스킬로 수행)
@@ -53,7 +60,7 @@ bash eb-install.sh               # 7개 eb 스킬을 .claude/skills/ 에 설치
 /eb-check                      # 건강도 + 리뷰 큐
 ```
 
-설치 스크립트는 [`install.sh`](install.sh)(고정 ref에서 스킬 fetch). `skills-lock.json`으로 잠가 관리하려면 [`eb-setup` 스킬](.claude/skills/eb-setup/SKILL.md)의 예시 참고. `<REF>`는 릴리스 태그로 핀하는 것을 권장한다.
+`<REF>`(릴리스 태그)로 핀하는 것을 권장한다.
 
 ### 유튜브·음성/영상 흡수 (선택)
 

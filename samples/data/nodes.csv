@@ -1,0 +1,7 @@
+id,title,type,namespace,visibility,summary,confidence,tags,body
+pillar-deep-work,딥 워크,pillar,,,산만함 없이 인지적으로 힘든 일에 몰입하는 능력,0.9,집중;생산성,
+fact-focus-trainable,집중은 단련된다,fact,,,집중력은 근육처럼 훈련으로 향상,0.8,집중,
+concept-time-blocking,시간 블록킹,concept,,,하루를 블록으로 나눠 딥워크 확보,0.85,집중;전략,
+concept-multitasking,멀티태스킹,concept,,,주의 잔류물로 집중을 해친다,0.75,집중;안티패턴,
+source-book-deepwork,책: 딥 워크,source,,,,0.95,출처;책,
+concept-pomodoro,포모도로,concept,,,25분 집중/5분 휴식 타이머 기법,0.7,집중;전략,

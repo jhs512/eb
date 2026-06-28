@@ -1,0 +1,37 @@
+# Excel Brain — CSV 변경 시 Google 시트로 동기화 (선택 기능).
+# 필요 설정(레포 Settings):
+#   - Secret  GOOGLE_SA_KEY   : 서비스 계정 JSON 내용 전체
+#   - Variable SPREADSHEET_ID  : 대상 스프레드시트 ID
+# 탭 이름은 기본 _data/_edges/_meta. 바꾸려면 NODE_TAB/EDGE_TAB/META_TAB 변수.
+name: Sheets Sync
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "data/*.csv"
+      - "sync.py"
+      - "requirements.txt"
+  workflow_dispatch:
+
+concurrency:
+  group: sheets-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Sync CSV -> Google Sheet
+        env:
+          GOOGLE_SA_KEY: ${{ secrets.GOOGLE_SA_KEY }}
+          SPREADSHEET_ID: ${{ vars.SPREADSHEET_ID }}
+          NODE_TAB: ${{ vars.NODE_TAB }}
+          EDGE_TAB: ${{ vars.EDGE_TAB }}
+          META_TAB: ${{ vars.META_TAB }}
+        run: python sync.py --data data

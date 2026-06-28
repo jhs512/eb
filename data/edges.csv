@@ -1,0 +1,9 @@
+source,type,target,weight,note
+decision-csv-source,supports,pillar-knowledge-graph,0.8,CSV 원천이 그래프 모델을 실현
+concept-typed-node,part_of,pillar-knowledge-graph,0.9,노드는 그래프의 구성요소
+concept-typed-edge,part_of,pillar-knowledge-graph,0.9,엣지는 그래프의 구성요소
+concept-typed-edge,related_to,concept-typed-node,0.7,엣지는 노드를 잇는다
+fact-sqlite-cte,supports,decision-csv-source,0.85,CSV를 DB로 올리면 그래프 연산 가능
+playbook-add-node,depends_on,concept-typed-node,0.6,노드 스키마를 알아야 추가 가능
+playbook-add-node,depends_on,concept-typed-edge,0.6,엣지 스키마를 알아야 연결 가능
+question-scale-limit,related_to,fact-sqlite-cte,0.5,SQLite 방식의 확장성 의문

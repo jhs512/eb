@@ -1,0 +1,8 @@
+id,title,type,namespace,visibility,summary,confidence,tags,body
+pillar-knowledge-graph,지식은 그래프다,pillar,personal,public,"노트 더미가 아니라 타입 있는 노드와 엣지의 그래프로 지식을 다룬다.",0.9,knowledge;graph;foundation,"긴 문서는 사람에겐 괜찮지만 에이전트에겐 비효율적이다. 노드당 하나의 아이디어, 엣지마다 방향과 이유를 두면 탐색과 검색이 싸진다."
+concept-typed-node,타입 있는 노드,concept,personal,public,"각 노드는 type(pillar/decision/fact 등)을 가지며 하나의 원자적 아이디어를 담는다.",0.85,node;schema,"노드는 id, title, type, namespace, visibility, summary, confidence, tags, body 필드를 가진다."
+concept-typed-edge,타입 있는 엣지,concept,personal,public,"각 엣지는 source, type, target, weight, note 를 가지며 두 노드의 관계를 설명한다.",0.85,edge;schema,"supports, depends_on, part_of, related_to, contradicts 등 타입으로 관계의 의미를 명시한다."
+decision-csv-source,CSV를 진실의 원천으로,decision,personal,public,"마크다운 대신 3개의 CSV(nodes/edges/meta)를 지식의 단일 원천으로 삼는다.",0.8,decision;csv,"엑셀/시트로 바로 열고 편집할 수 있고, 파이썬으로 DB에 적재해 그래프 연산하기 쉽다."
+fact-sqlite-cte,SQLite 재귀 CTE로 그래프 탐색,fact,personal,public,"SQLite의 WITH RECURSIVE 로 BFS 이웃 탐색과 최단 경로를 외부 의존성 없이 계산할 수 있다.",0.95,sqlite;graph;cte,"인접 관계를 CTE로 펼치고 방문 집합으로 사이클을 막으면 표준 라이브러리만으로 그래프 연산이 된다."
+playbook-add-node,새 노드 추가 절차,playbook,personal,public,"nodes.csv 에 행을 추가하고 edges.csv 로 기존 노드와 최소 1개 이상 연결한다.",0.7,playbook;howto,"1) nodes.csv 에 id/type/title 채우기 2) edges.csv 에 관계 추가 3) eb.py validate 로 검증."
+question-scale-limit,규모 한계는 어디인가,question,personal,namespace,"CSV+SQLite 방식이 몇 개 노드까지 실용적인가?",0.4,question;scale,"수만 행까지는 인메모리 SQLite로 충분하나 그 이상은 영속 DB나 전용 그래프 저장소를 검토."

@@ -1,0 +1,4 @@
+# 코어 그래프 엔진(eb.py)과 테스트는 표준 라이브러리만으로 동작 — 설치 불필요.
+# 아래는 선택 기능인 Google Sheets 동기화(sync.py)에만 필요하다.
+gspread>=6.0
+google-auth>=2.0

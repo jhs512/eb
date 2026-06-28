@@ -1,0 +1,18 @@
+# 자격증명 — 서비스 계정 키/시크릿은 절대 커밋 금지
+*.json
+.env
+*.key
+*.pem
+
+# OS / 에디터 부산물
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 로컬 SQLite 산출물(필요 시)
+*.db
+*.sqlite

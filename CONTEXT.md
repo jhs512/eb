@@ -1,6 +1,6 @@
 # Excel Brain (eb)
 
-에이전트에게 **무한·구조화된 기억**을 주는 타입 지식 그래프. 지식은 마크다운이 아니라 **표(스프레드시트) 묶음**에 살고, 그래프 탐색은 결정적(deterministic) Python 엔진이 보증한다. 원본 [Infinite Brain](https://github.com/JotaSXBR/obsidian-infinite-brain)을 CSV로 재해석한 것.
+에이전트에게 **무한·구조화된 기억**을 주는 타입 지식 그래프. 지식은 마크다운이 아니라 **표(스프레드시트) 묶음**에 살고, 그래프 탐색은 결정적(deterministic) Python 엔진이 보증한다. [이 영상](https://www.youtube.com/watch?v=z02Y-1OvWSM)에서 영감을 받았다.
 
 ## Language
 
@@ -41,7 +41,7 @@ _Avoid_: 점수, 우선순위, 가중치
 _Avoid_: 추천, 힌트, 자동완성
 
 **그래프-인지 캡처 (Graph-aware capture)**:
-지식을 추가하기 *전에* 그래프를 먼저 조회해 중복을 피하고 연결처를 찾는 캡처 방식. eb가 ib와 갈리는 핵심 지점.
+지식을 추가하기 *전에* 그래프를 먼저 조회해 중복을 피하고 연결처를 찾는 캡처 방식. eb의 핵심 차별점.
 _Avoid_: 자동 추가, 임포트
 
 **고아 노드 (Orphan)**:

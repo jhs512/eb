@@ -1,11 +1,11 @@
 ---
-name: eb-recall
+name: eb-ask
 description: Excel Brain(eb) 그래프를 탐색해 답을 얻는 조회 스킬. 키워드/노드로 관련 서브그래프(유사 노드 + 이웃/경로/요소)를 찾는다. 트리거 - "조회", "recall", "이웃", "최단 경로", "관련 노드 찾기", "그래프에서 찾아줘".
 ---
 
-# eb-recall — 그래프 조회
+# eb-ask — 그래프 조회
 
-`eb.py`(stdlib only)로 `data/`의 CSV 그래프를 **탐색해 답을 얻는다**. 이 스킬은 얇은 오케스트레이터이고, 실제 그래프 연산은 모두 `eb.py`가 결정적으로 보증한다. **읽기 전용** — CSV를 바꾸지 않는다(추가는 `eb-capture`, 정제는 `eb-curate`).
+`eb.py`(stdlib only)로 `data/`의 CSV 그래프를 **탐색해 답을 얻는다**. 이 스킬은 얇은 오케스트레이터이고, 실제 그래프 연산은 모두 `eb.py`가 결정적으로 보증한다. **읽기 전용** — CSV를 바꾸지 않는다(추가는 `eb-learn`, 정제는 `eb-clean`).
 
 > Windows에서 한국어가 깨지면 명령 앞에 `PYTHONUTF8=1`.
 

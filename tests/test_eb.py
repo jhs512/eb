@@ -441,7 +441,7 @@ class HealthTest(unittest.TestCase):
         self.assertTrue(any("ghost" in d for d in q["dangling"]))
 
 
-# --- 골든 트랜스크립트: eb-capture 회귀 ----------------------------------- #
+# --- 골든 트랜스크립트: eb-learn 회귀 ----------------------------------- #
 # 시나리오 문서: tests/fixtures/capture_caching_golden.md (plan을 함께 갱신).
 # 증류(LLM)는 박제하지 않고, 증류 결과를 엔진에 넣었을 때의 불변식만 검증한다.
 GOLDEN_SEED_NODES = [

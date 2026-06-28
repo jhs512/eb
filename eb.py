@@ -219,11 +219,11 @@ def merge(data_dir: str, from_id: str, into_id: str) -> dict:
             e["source"] = t; s = t; touched = True
         if tg == f:
             e["target"] = t; tg = t; touched = True
-        if touched:
-            repointed += 1
-        if s == tg:  # 병합으로 생긴 자기 루프 제거
+        if s == tg:  # 병합으로 생긴 자기 루프는 버린다(재배선으로 세지 않음)
             dropped += 1
             continue
+        if touched:
+            repointed += 1
         new_edges.append(e)
     _write_all(base / EDGES_FILE, EDGE_COLS, new_edges)
     _write_all(base / NODES_FILE, NODE_COLS,
@@ -563,14 +563,7 @@ def review_queue(conn, confidence_threshold: float = 0.6) -> dict:
 def validate(conn):
     """무결성 검사: 끊긴 엣지, 빈 필드 등."""
     issues = []
-    dangling = conn.execute(
-        """
-        SELECT source, type, target FROM edges
-        WHERE source NOT IN (SELECT id FROM nodes)
-           OR target NOT IN (SELECT id FROM nodes)
-        """
-    ).fetchall()
-    for d in dangling:
+    for d in _dangling_edges(conn):
         issues.append(f"끊긴 엣지: {d['source']} -{d['type']}-> {d['target']} (없는 노드 참조)")
     no_type = conn.execute(
         "SELECT id FROM nodes WHERE type IS NULL OR type = ''"

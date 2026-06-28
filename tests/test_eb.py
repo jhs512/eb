@@ -348,6 +348,8 @@ class MergeTest(unittest.TestCase):
         res = eb.merge(str(self.dir), "b", "a")
         self.assertNotIn(("a", "a"), self._edges())
         self.assertEqual(res["dropped_selfloops"], 1)
+        # p->b, b->q 는 살아남아 재배선(2), a->b 만 자기 루프로 제거
+        self.assertEqual(res["repointed"], 2)
 
     def test_merge_self_rejected(self):
         with self.assertRaises(ValueError):

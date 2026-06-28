@@ -3,6 +3,9 @@
 .env
 *.key
 *.pem
+# 단, evals 케이스 데이터(JSON)는 추적한다(자격증명 아님)
+!evals/cases/
+!evals/cases/*.json
 
 # OS / 에디터 부산물
 .DS_Store

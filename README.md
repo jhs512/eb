@@ -51,6 +51,8 @@ ib는 LLM이 그래프를 프롬프트로 다룬다. eb는 조회뿐 아니라 *
 
 `/eb-init` 절차와 `skills-lock.json` 예시는 [`eb-init` 스킬](.claude/skills/eb-init/SKILL.md) 참고. `<REF>`는 릴리스 태그로 핀하는 것을 권장한다.
 
+> **바로 돌려보고 싶다면** → [`samples/`](samples/) 에 실행 가능한 예제 브레인이 있다. `cd samples && python eb.py search 집중` 으로 바로 동작한다. 지식을 추가하는 캡처 흐름은 [`samples/SCENARIO.md`](samples/SCENARIO.md) 참고.
+
 ---
 
 ## 레퍼런스
@@ -152,6 +154,7 @@ eb/
 ├── tests/             # 오프라인 테스트(엔진 + sync)
 ├── CONTEXT.md         # 도메인 용어집
 ├── docs/adr/          # 아키텍처 결정 기록
+├── samples/           # 실행 가능한 예제 브레인 + 캡처 시나리오(SCENARIO.md)
 ├── .claude/skills/eb-*/SKILL.md     # 5스킬(init/capture/recall/curate/health)
 └── .github/workflows/
     ├── tests.yml       # 코어 테스트 CI (의존성 0)

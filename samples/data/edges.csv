@@ -4,3 +4,6 @@ concept-time-blocking,part_of,pillar-deep-work,0.9,딥워크 확보 전략
 concept-multitasking,contradicts,pillar-deep-work,0.7,멀티태스킹은 딥워크 방해
 pillar-deep-work,derived_from,source-book-deepwork,0.95,책에서 정리
 concept-pomodoro,related_to,concept-time-blocking,0.7,둘 다 시간 기반 집중 전략
+concept-attention-residue,related_to,concept-multitasking,0.8,멀티태스킹이 해로운 메커니즘
+concept-shutdown-ritual,supports,pillar-deep-work,0.7,딥워크 회복 루틴
+concept-shutdown-ritual,derived_from,source-book-deepwork,0.9,책에서 정리

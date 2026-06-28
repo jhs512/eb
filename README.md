@@ -114,7 +114,7 @@ python eb.py merge old-dup-id canonical-id           # 중복 병합(from 엣지
 - **suggest**: 공통 이웃 수 + 태그 자카드로 아직 직접 연결 안 된 후보를 점수화. `eb-learn`(붙일 곳)와 `eb-clean`(촘촘화)가 쓴다.
 - **merge**: `from` 엣지를 `into`로 재배선하고 `from` 노드를 삭제. self-merge·없는 노드는 거부, 병합으로 생긴 자기 루프·평행 중복은 제거(기존 멀티그래프 중복은 보존).
 - **health**: stats 요약 + 리뷰 큐(`--confidence` 임계값). 그래프가 스스로 약한 곳을 드러낸다.
-- **export**: 그래프를 엑셀 말고 다른 뷰로 — `--format mermaid`(깃허브 마크다운에 바로 렌더) · `dot`(Graphviz) · `json`(d3/cytoscape). 끊긴 엣지는 제외. 렌더 예시는 [`samples/README.md`](samples/README.md#그래프-미리보기-엑셀-말고-다른-뷰).
+- **export**: 그래프를 엑셀 말고 다른 뷰로 — `--format mermaid`(깃허브 마크다운에 바로 렌더) · `dot`(Graphviz) · `json`(d3/cytoscape). 끊긴 엣지는 제외. 렌더 예시는 [`samples/README.md`](samples/README.md#그래프-미리보기-엑셀-말고-다른-뷰), 설계는 [ADR-0006](docs/adr/0006-graph-export-views.md).
 - **path**: 기본은 무가중 BFS(홉 최소). `--weighted` 면 `weight`를 비용으로 본 다익스트라.
 - **add-node/add-edge**: 빈/중복 id, 없는 노드 참조를 거부(`--allow-missing`으로 우회).
 

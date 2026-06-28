@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://github.com/jhs512/eb/actions/workflows/tests.yml"><img src="https://github.com/jhs512/eb/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
-  <img src="https://img.shields.io/badge/Version-0.5.0-brightgreen.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Version-0.5.1-brightgreen.svg" alt="Version">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/Python-3.10+-3776ab.svg" alt="Python">
   <img src="https://img.shields.io/badge/Deps-stdlib_only_(core)-orange.svg" alt="stdlib only">
@@ -36,10 +36,14 @@ eb는 조회뿐 아니라 **쓰기에도 그래프 탐색**을 쓴다: `eb-learn
 
 ## 빠른 시작
 
-다른 저장소에서 eb를 쓰려면 `skills-lock.json`에 `source: jhs512/eb`로 5스킬을 잠가 설치한다(기존 GitHub 스킬 설치와 동일 형식). 그다음:
+다른 저장소(또는 빈 폴더)에서 eb 스킬을 설치한다 — 설치 스크립트가 고정 ref에서 스킬을 `.claude/skills/`로 가져온다(별도 도구 불필요):
 
 ```bash
-# 1) 스킬 설치 후, 해당 저장소에서:
+# 0) 스킬 설치 (curl 만 필요). 받은 스크립트는 실행 전에 살펴봐도 된다.
+curl -fsSL https://raw.githubusercontent.com/jhs512/eb/v0.5.1/install.sh -o eb-install.sh
+bash eb-install.sh               # 7개 eb 스킬을 .claude/skills/ 에 설치
+
+# 1) 그다음, 해당 저장소에서:
 /eb-setup                        # jhs512/eb 의 고정 ref에서 eb.py·씨앗 CSV를 깔아준다
 
 # 2) 지식 쌓기 / 꺼내기 (에이전트가 스킬로 수행)
@@ -49,7 +53,7 @@ eb는 조회뿐 아니라 **쓰기에도 그래프 탐색**을 쓴다: `eb-learn
 /eb-check                      # 건강도 + 리뷰 큐
 ```
 
-`/eb-setup` 절차와 `skills-lock.json` 예시는 [`eb-setup` 스킬](.claude/skills/eb-setup/SKILL.md) 참고. `<REF>`는 릴리스 태그로 핀하는 것을 권장한다.
+설치 스크립트는 [`install.sh`](install.sh)(고정 ref에서 스킬 fetch). `skills-lock.json`으로 잠가 관리하려면 [`eb-setup` 스킬](.claude/skills/eb-setup/SKILL.md)의 예시 참고. `<REF>`는 릴리스 태그로 핀하는 것을 권장한다.
 
 ### 유튜브·음성/영상 흡수 (선택)
 

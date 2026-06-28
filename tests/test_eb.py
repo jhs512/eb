@@ -177,5 +177,249 @@ class EbTest(unittest.TestCase):
         conn2.close()
 
 
+def write_search_graph(d: Path):
+    """검색 테스트용 그래프 — 필드별로 질의어가 흩어져 있다."""
+    (d / "nodes.csv").write_text(
+        "id,title,type,namespace,visibility,summary,confidence,tags,body\n"
+        "graph-db,Graph Database,concept,personal,public,SQLite로 그래프를 저장,0.9,graph;sqlite,재귀 CTE로 그래프 탐색\n"
+        "python-engine,Python 엔진,concept,personal,public,stdlib only,0.8,python;engine,sqlite 바인딩으로 그래프 연산\n"
+        "csv-source,CSV 원천,decision,personal,public,CSV가 진실의 원천,0.7,csv;source,엑셀로 편집\n"
+        "note-x,잡담,note,personal,public,,0.5,,관련 없는 내용\n",
+        encoding="utf-8",
+    )
+    (d / "edges.csv").write_text("source,type,target,weight,note\n", encoding="utf-8")
+    (d / "meta.csv").write_text("field,applies_to,description\nid,node,x\n", encoding="utf-8")
+
+
+class SearchTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        write_search_graph(self.dir)
+        self.conn = eb.load_db(str(self.dir))
+
+    def tearDown(self):
+        self.conn.close()
+        self.tmp.cleanup()
+
+    def test_finds_node_by_title_word(self):
+        ids = [r["id"] for r in eb.search(self.conn, "Database")]
+        self.assertEqual(ids, ["graph-db"])
+
+    def test_ranks_more_field_matches_higher(self):
+        # "sqlite": graph-db는 summary+tags(2필드), python-engine은 body(1필드)
+        res = eb.search(self.conn, "sqlite")
+        self.assertEqual([r["id"] for r in res], ["graph-db", "python-engine"])
+        self.assertEqual(res[0]["score"], 2)
+        self.assertEqual(sorted(res[0]["fields"]), ["summary", "tags"])
+
+    def test_no_match_returns_empty(self):
+        self.assertEqual(eb.search(self.conn, "존재하지않는질의"), [])
+
+    def test_empty_query_returns_empty(self):
+        self.assertEqual(eb.search(self.conn, "   "), [])
+
+    def test_case_insensitive_for_ascii(self):
+        self.assertEqual(eb.search(self.conn, "SQLITE"), eb.search(self.conn, "sqlite"))
+
+    def test_matches_korean_substring(self):
+        ids = [r["id"] for r in eb.search(self.conn, "그래프")]
+        self.assertEqual(ids, ["graph-db", "python-engine"])
+
+
+def write_suggest_graph(d: Path):
+    """연결 제안 테스트용 그래프.
+
+    a-b, a-c, d-b, d-c  → a와 d는 공통 이웃 {b,c} 2개(직접 연결은 아님).
+    e는 a와 태그가 같지만(자카드 1.0) 공통 이웃 없음.  f는 e에만 연결.
+    """
+    (d / "nodes.csv").write_text(
+        "id,title,type,namespace,visibility,summary,confidence,tags,body\n"
+        "a,A,concept,n,public,,0.9,graph;python,\n"
+        "b,B,concept,n,public,,0.8,x,\n"
+        "c,C,concept,n,public,,0.8,y,\n"
+        "d,D,concept,n,public,,0.8,graph,\n"
+        "e,E,concept,n,public,,0.8,graph;python,\n"
+        "f,F,concept,n,public,,0.8,z,\n",
+        encoding="utf-8",
+    )
+    (d / "edges.csv").write_text(
+        "source,type,target,weight,note\n"
+        "a,related_to,b,0.5,\n"
+        "a,related_to,c,0.5,\n"
+        "d,related_to,b,0.5,\n"
+        "d,related_to,c,0.5,\n"
+        "e,related_to,f,0.5,\n",
+        encoding="utf-8",
+    )
+    (d / "meta.csv").write_text("field,applies_to,description\nid,node,x\n", encoding="utf-8")
+
+
+class SuggestTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        write_suggest_graph(self.dir)
+        self.conn = eb.load_db(str(self.dir))
+
+    def tearDown(self):
+        self.conn.close()
+        self.tmp.cleanup()
+
+    def test_suggests_common_neighbor_node(self):
+        # a의 공통 이웃 노드 d가 후보로 나오고, 직접 이웃(b,c)·자기 자신(a)은 제외
+        ids = [r["id"] for r in eb.suggest(self.conn, "a")]
+        self.assertIn("d", ids)
+        self.assertNotIn("a", ids)
+        self.assertNotIn("b", ids)
+        self.assertNotIn("c", ids)
+
+    def test_suggests_by_tag_jaccard_without_common_neighbor(self):
+        # e는 공통 이웃이 없어도 태그가 같아(자카드 1.0) 후보가 된다
+        res = {r["id"]: r for r in eb.suggest(self.conn, "a")}
+        self.assertIn("e", res)
+        self.assertEqual(res["e"]["common"], 0)
+        self.assertAlmostEqual(res["e"]["jaccard"], 1.0)
+
+    def test_common_neighbor_ranks_above_tag_only(self):
+        # d(공통이웃2 + 자카드0.5 = 2.5) 가 e(자카드1.0) 보다 위
+        ids = [r["id"] for r in eb.suggest(self.conn, "a")]
+        self.assertLess(ids.index("d"), ids.index("e"))
+
+    def test_no_candidates_returns_empty(self):
+        # f는 공통 이웃도, 겹치는 태그도 없다
+        self.assertEqual(eb.suggest(self.conn, "f"), [])
+
+    def test_unknown_node_returns_empty(self):
+        self.assertEqual(eb.suggest(self.conn, "없는노드"), [])
+
+
+def write_merge_graph(d: Path):
+    """병합 테스트용. b를 a로 병합하면: p->b는 p->a, b->q는 a->q, a->b는 a->a(루프)→제거."""
+    (d / "nodes.csv").write_text(
+        "id,title,type,namespace,visibility,summary,confidence,tags,body\n"
+        "a,A,concept,n,public,,0.9,,\n"
+        "b,B,concept,n,public,,0.8,,\n"
+        "p,P,concept,n,public,,0.8,,\n"
+        "q,Q,concept,n,public,,0.8,,\n",
+        encoding="utf-8",
+    )
+    (d / "edges.csv").write_text(
+        "source,type,target,weight,note\n"
+        "p,related_to,b,0.5,\n"
+        "b,related_to,q,0.5,\n"
+        "a,related_to,b,0.5,\n",
+        encoding="utf-8",
+    )
+    (d / "meta.csv").write_text("field,applies_to,description\nid,node,x\n", encoding="utf-8")
+
+
+class MergeTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        write_merge_graph(self.dir)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _edges(self):
+        conn = eb.load_db(str(self.dir))
+        rows = [(r["source"], r["target"]) for r in
+                conn.execute("SELECT source, target FROM edges").fetchall()]
+        conn.close()
+        return rows
+
+    def _node_ids(self):
+        conn = eb.load_db(str(self.dir))
+        ids = [r["id"] for r in conn.execute("SELECT id FROM nodes").fetchall()]
+        conn.close()
+        return ids
+
+    def test_merge_repoints_edges_and_removes_node(self):
+        eb.merge(str(self.dir), "b", "a")
+        self.assertNotIn("b", self._node_ids())
+        edges = self._edges()
+        self.assertIn(("p", "a"), edges)
+        self.assertIn(("a", "q"), edges)
+
+    def test_merge_drops_resulting_self_loop(self):
+        # a->b 는 b를 a로 병합하면 a->a 가 되어 버려진다
+        res = eb.merge(str(self.dir), "b", "a")
+        self.assertNotIn(("a", "a"), self._edges())
+        self.assertEqual(res["dropped_selfloops"], 1)
+
+    def test_merge_self_rejected(self):
+        with self.assertRaises(ValueError):
+            eb.merge(str(self.dir), "a", "a")
+
+    def test_merge_missing_node_rejected(self):
+        with self.assertRaises(ValueError):
+            eb.merge(str(self.dir), "없는노드", "a")
+        with self.assertRaises(ValueError):
+            eb.merge(str(self.dir), "b", "없는노드")
+
+    def test_merge_leaves_no_dangling(self):
+        eb.merge(str(self.dir), "b", "a")
+        conn = eb.load_db(str(self.dir))
+        self.assertEqual([i for i in eb.validate(conn) if "끊긴" in i], [])
+        conn.close()
+
+
+def write_health_graph(d: Path):
+    """점검 테스트용. hi(0.9) lo(0.3) unk(없음) orph(0.9, 고아). lo->ghost 는 끊긴 엣지."""
+    (d / "nodes.csv").write_text(
+        "id,title,type,namespace,visibility,summary,confidence,tags,body\n"
+        "hi,Hi,concept,n,public,,0.9,,\n"
+        "lo,Lo,concept,n,public,,0.3,,\n"
+        "unk,Unk,concept,n,public,,,,\n"
+        "orph,Orph,concept,n,public,,0.9,,\n",
+        encoding="utf-8",
+    )
+    (d / "edges.csv").write_text(
+        "source,type,target,weight,note\n"
+        "hi,related_to,lo,0.5,\n"
+        "lo,related_to,ghost,0.5,\n",
+        encoding="utf-8",
+    )
+    (d / "meta.csv").write_text("field,applies_to,description\nid,node,x\n", encoding="utf-8")
+
+
+class HealthTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        write_health_graph(self.dir)
+        self.conn = eb.load_db(str(self.dir))
+
+    def tearDown(self):
+        self.conn.close()
+        self.tmp.cleanup()
+
+    def test_low_confidence_below_threshold(self):
+        q = eb.review_queue(self.conn, confidence_threshold=0.6)
+        ids = {r["id"] for r in q["low_confidence"]}
+        self.assertIn("lo", ids)     # 0.3 < 0.6
+        self.assertNotIn("hi", ids)  # 0.9 >= 0.6
+
+    def test_missing_confidence_flagged_for_review(self):
+        q = eb.review_queue(self.conn, confidence_threshold=0.6)
+        ids = {r["id"] for r in q["low_confidence"]}
+        self.assertIn("unk", ids)    # confidence 없음 = 검토 필요
+
+    def test_threshold_is_respected(self):
+        ids = {r["id"] for r in
+               eb.review_queue(self.conn, confidence_threshold=0.95)["low_confidence"]}
+        self.assertIn("hi", ids)     # 0.9 < 0.95 이면 검토 대상
+        self.assertIn("orph", ids)
+
+    def test_orphans_in_queue(self):
+        self.assertIn("orph", eb.review_queue(self.conn)["orphans"])
+
+    def test_dangling_in_queue(self):
+        q = eb.review_queue(self.conn)
+        self.assertTrue(any("ghost" in d for d in q["dangling"]))
+
+
 if __name__ == "__main__":
     unittest.main()

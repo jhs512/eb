@@ -11,6 +11,8 @@
 
 사용 예:
   python eb.py stats
+  python eb.py search 그래프
+  python eb.py suggest pillar-knowledge-graph
   python eb.py node pillar-knowledge-graph
   python eb.py neighbors pillar-knowledge-graph --depth 2 --direction both
   python eb.py path decision-csv-source pillar-knowledge-graph
@@ -22,6 +24,7 @@
   python eb.py types
   python eb.py add-node --id playbook-x --title "엑스" --type playbook --tags "a;b"
   python eb.py add-edge --source playbook-x --type depends_on --target concept-typed-node
+  python eb.py merge old-dup-id canonical-id
 """
 from __future__ import annotations
 
@@ -176,6 +179,56 @@ def add_node(data_dir: str, *, id: str, title: str, type: str = None,
         "tags": tags or "", "body": body or "",
     })
     return nid
+
+
+def _write_all(path: Path, cols: list[str], rows: list[dict]) -> None:
+    """CSV를 헤더부터 전체 재기록한다(병합 등 행 삭제/수정용)."""
+    with path.open("w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=cols, lineterminator="\n")
+        w.writeheader()
+        for r in rows:
+            w.writerow({c: r.get(c, "") for c in cols})
+
+
+def merge(data_dir: str, from_id: str, into_id: str) -> dict:
+    """from_id 의 모든 엣지를 into_id 로 재배선하고 from_id 노드를 삭제한다.
+
+    같은 노드 병합·존재하지 않는 노드는 ValueError. 병합으로 생긴 자기 루프는 버린다.
+    반환: {"into","repointed","dropped_selfloops"}.
+    """
+    f = (from_id or "").strip()
+    t = (into_id or "").strip()
+    if not f or not t:
+        raise ValueError("from_id와 into_id는 필수입니다")
+    if f == t:
+        raise ValueError("같은 노드는 병합할 수 없습니다")
+    base = Path(data_dir)
+    nodes = _read_csv(base / NODES_FILE)
+    ids = {(r.get("id") or "").strip() for r in nodes}
+    missing = [x for x in (f, t) if x not in ids]
+    if missing:
+        raise ValueError(f"없는 노드: {', '.join(missing)}")
+
+    repointed = dropped = 0
+    new_edges = []
+    for e in _read_csv(base / EDGES_FILE):
+        s = (e.get("source") or "").strip()
+        tg = (e.get("target") or "").strip()
+        touched = False
+        if s == f:
+            e["source"] = t; s = t; touched = True
+        if tg == f:
+            e["target"] = t; tg = t; touched = True
+        if touched:
+            repointed += 1
+        if s == tg:  # 병합으로 생긴 자기 루프 제거
+            dropped += 1
+            continue
+        new_edges.append(e)
+    _write_all(base / EDGES_FILE, EDGE_COLS, new_edges)
+    _write_all(base / NODES_FILE, NODE_COLS,
+               [r for r in nodes if (r.get("id") or "").strip() != f])
+    return {"into": t, "repointed": repointed, "dropped_selfloops": dropped}
 
 
 def add_edge(data_dir: str, *, source: str, type: str, target: str,
@@ -398,6 +451,115 @@ def stats(conn):
     }
 
 
+SEARCH_FIELDS = ["title", "summary", "tags", "body"]
+
+
+def search(conn, query: str, limit: int = 20):
+    """title/summary/tags/body 에서 query 를 부분일치로 찾는다(대소문자 무시).
+
+    일치한 필드 수를 score 로 랭크한다(많을수록 위, 동률은 id 사전순).
+    반환: [{"id","title","type","score","fields":[...]}], 무매치면 [].
+    """
+    q = (query or "").strip()
+    if not q:
+        return []
+    rows = conn.execute("SELECT id, title, type, summary, tags, body FROM nodes").fetchall()
+    ql = q.lower()
+    results = []
+    for r in rows:
+        hit = [f for f in SEARCH_FIELDS if r[f] and ql in r[f].lower()]
+        if hit:
+            results.append({
+                "id": r["id"], "title": r["title"], "type": r["type"],
+                "score": len(hit), "fields": hit,
+            })
+    results.sort(key=lambda x: (-x["score"], x["id"]))
+    return results[:limit]
+
+
+def _undirected_adj(conn) -> dict:
+    """무방향 인접 집합: {id: {이웃 id, ...}}."""
+    adj: dict = {}
+    for r in conn.execute("SELECT source, target FROM edges").fetchall():
+        s, t = r["source"], r["target"]
+        adj.setdefault(s, set()).add(t)
+        adj.setdefault(t, set()).add(s)
+    return adj
+
+
+def _tags_set(s) -> set:
+    return {x.strip() for x in (s or "").split(";") if x.strip()}
+
+
+def suggest(conn, node_id: str, limit: int = 10):
+    """node_id 에 붙일 만한 연결 후보를 그래프 구조로 제안한다.
+
+    점수 = 공통 이웃 수(무방향) + 태그 자카드 유사도.
+    자기 자신과 이미 직접 연결된 노드는 제외하고, 점수>0 만 반환한다.
+    반환: [{"id","title","score","common","jaccard"}], 후보 없으면 [].
+    """
+    nodes = {r["id"]: r for r in
+             conn.execute("SELECT id, title, tags FROM nodes").fetchall()}
+    if node_id not in nodes:
+        return []
+    adj = _undirected_adj(conn)
+    my_nbrs = adj.get(node_id, set())
+    my_tags = _tags_set(nodes[node_id]["tags"])
+    exclude = set(my_nbrs) | {node_id}
+    out = []
+    for cid, r in nodes.items():
+        if cid in exclude:
+            continue
+        common = len(my_nbrs & adj.get(cid, set()))
+        ctags = _tags_set(r["tags"])
+        union = my_tags | ctags
+        jac = (len(my_tags & ctags) / len(union)) if union else 0.0
+        score = common + jac
+        if score > 0:
+            out.append({
+                "id": cid, "title": r["title"], "score": round(score, 4),
+                "common": common, "jaccard": round(jac, 4),
+            })
+    out.sort(key=lambda x: (-x["score"], x["id"]))
+    return out[:limit]
+
+
+def _dangling_edges(conn):
+    return conn.execute(
+        """
+        SELECT source, type, target FROM edges
+        WHERE source NOT IN (SELECT id FROM nodes)
+           OR target NOT IN (SELECT id FROM nodes)
+        """
+    ).fetchall()
+
+
+def review_queue(conn, confidence_threshold: float = 0.6) -> dict:
+    """그래프가 '약한 곳'을 스스로 드러내는 점검 대기열.
+
+    - low_confidence: confidence 가 없거나(검토 필요) 임계값 미만인 노드
+                      (불확실한 것 먼저: None → 낮은 값 순)
+    - orphans:        엣지 없는 고아 노드
+    - dangling:       없는 노드를 참조하는 끊긴 엣지
+    - missing_fields: type/title 이 빈 노드
+    """
+    low = []
+    for r in conn.execute("SELECT id, title, confidence FROM nodes").fetchall():
+        c = r["confidence"]
+        if c is None or c < confidence_threshold:
+            low.append({"id": r["id"], "title": r["title"], "confidence": c})
+    low.sort(key=lambda x: (x["confidence"] is not None,
+                            x["confidence"] if x["confidence"] is not None else 0.0,
+                            x["id"]))
+    dangling = [f"{d['source']} -{d['type']}-> {d['target']}"
+                for d in _dangling_edges(conn)]
+    missing = [r["id"] for r in conn.execute(
+        "SELECT id FROM nodes WHERE type IS NULL OR type='' "
+        "OR title IS NULL OR title=''").fetchall()]
+    return {"low_confidence": low, "orphans": orphans(conn),
+            "dangling": dangling, "missing_fields": missing}
+
+
 def validate(conn):
     """무결성 검사: 끊긴 엣지, 빈 필드 등."""
     issues = []
@@ -472,7 +634,19 @@ def main(argv=None):
     sub.add_parser("validate", help="무결성 검사")
     sub.add_parser("types", help="노드/엣지 타입별 개수")
     sub.add_parser("components", help="약연결 요소(무방향)")
+
+    sp = sub.add_parser("health", help="건강도 점검 + 리뷰 큐(저신뢰/고아/끊긴 엣지)")
+    sp.add_argument("--confidence", type=float, default=0.6,
+                    help="이 값 미만(또는 없음)인 노드를 리뷰 큐에 (기본 0.6)")
     sub.add_parser("build-db", help="CSV를 파일 SQLite로 적재(대규모용, --db 필요)")
+
+    sp = sub.add_parser("search", help="노드 검색(title/summary/tags/body 부분일치)")
+    sp.add_argument("query")
+    sp.add_argument("--limit", type=int, default=20)
+
+    sp = sub.add_parser("suggest", help="연결 후보 제안(공통 이웃 + 태그 자카드)")
+    sp.add_argument("id")
+    sp.add_argument("--limit", type=int, default=10)
 
     sp = sub.add_parser("node", help="노드 상세 + 엣지/백링크")
     sp.add_argument("id")
@@ -504,6 +678,10 @@ def main(argv=None):
     sp.add_argument("--confidence", type=float)
     sp.add_argument("--tags", help="세미콜론(;) 구분")
     sp.add_argument("--body")
+
+    sp = sub.add_parser("merge", help="중복 노드 병합(from의 엣지를 into로 재배선 후 삭제)")
+    sp.add_argument("from_id")
+    sp.add_argument("into_id")
 
     sp = sub.add_parser("add-edge", help="edges.csv에 엣지 추가(노드 존재 검사)")
     sp.add_argument("--source", required=True)
@@ -539,6 +717,16 @@ def main(argv=None):
             print(f"✗ {ex}")
             return 1
         print(f"✓ 엣지 추가: {s} -{ty}-> {t}")
+        return 0
+
+    if args.cmd == "merge":
+        try:
+            r = merge(args.data, args.from_id, args.into_id)
+        except ValueError as ex:
+            print(f"✗ {ex}")
+            return 1
+        print(f"✓ 병합: {args.from_id} -> {r['into']} "
+              f"(엣지 {r['repointed']}개 재배선, 자기 루프 {r['dropped_selfloops']}개 제거)")
         return 0
 
     if args.cmd == "build-db" and not args.db:
@@ -589,6 +777,22 @@ def main(argv=None):
                 print(f"  - {i}")
             return 1
 
+    elif args.cmd == "search":
+        res = search(conn, args.query, args.limit)
+        if not res:
+            print("(검색 결과 없음)")
+        for r in res:
+            print(f"  [{r['score']}] {r['id']}  {r['title']}"
+                  f"  ({', '.join(r['fields'])})")
+
+    elif args.cmd == "suggest":
+        res = suggest(conn, args.id, args.limit)
+        if not res:
+            print("(연결 후보 없음)")
+        for r in res:
+            print(f"  [{r['score']}] {r['id']}  {r['title']}"
+                  f"  (공통이웃 {r['common']}, 자카드 {r['jaccard']})")
+
     elif args.cmd == "node":
         _print_node(*node_detail(conn, args.id))
 
@@ -615,6 +819,24 @@ def main(argv=None):
                 print("(경로 없음)")
                 return 1
             print(" -> ".join(path) + f"   (홉 {len(path) - 1})")
+
+    elif args.cmd == "health":
+        s = stats(conn)
+        print(f"노드: {s['nodes']}  엣지: {s['edges']}  "
+              f"평균 차수: {s['avg_degree']}  고아: {s['orphans']}")
+        q = review_queue(conn, args.confidence)
+        print(f"\n리뷰 큐 — 저신뢰/미상 노드 (<{args.confidence}): {len(q['low_confidence'])}")
+        for r in q["low_confidence"]:
+            c = "없음" if r["confidence"] is None else r["confidence"]
+            print(f"  [{c}] {r['id']}  {r['title']}")
+        print(f"\n고아 노드: {len(q['orphans'])}")
+        for o in q["orphans"]:
+            print(f"  {o}")
+        print(f"\n끊긴 엣지: {len(q['dangling'])}")
+        for d in q["dangling"]:
+            print(f"  {d}")
+        if q["missing_fields"]:
+            print(f"\ntype/title 누락: {', '.join(q['missing_fields'])}")
 
     elif args.cmd == "components":
         comps = components(conn)

@@ -82,6 +82,20 @@ class CliTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("digraph", out)
 
+    def test_export_graphml_cli(self):
+        code, out = self.run_cli("export", "--format", "graphml")
+        self.assertEqual(code, 0)
+        self.assertIn("<graphml", out)
+
+    def test_export_scoped_cli(self):
+        # a 중심 depth1 → a,b 만(a->b). dup/c는 범위 밖, 끊긴 zzz는 노드 아님
+        code, out = self.run_cli("export", "--format", "json", "--center", "a", "--depth", "1")
+        self.assertEqual(code, 0)
+        data = json.loads(out)
+        ids = {n["id"] for n in data["nodes"]}
+        self.assertEqual(ids, {"a", "b"})
+        self.assertNotIn("dup", ids)
+
     # --- 종료코드로 실패를 알리는 명령 -------------------------------- #
     def test_validate_dangling_returns_1(self):
         code, out = self.run_cli("validate")

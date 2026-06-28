@@ -13,6 +13,7 @@
   python eb.py stats
   python eb.py search 그래프
   python eb.py suggest pillar-knowledge-graph
+  python eb.py export --format mermaid
   python eb.py node pillar-knowledge-graph
   python eb.py neighbors pillar-knowledge-graph --depth 2 --direction both
   python eb.py path decision-csv-source pillar-knowledge-graph
@@ -579,13 +580,30 @@ def _node_ids(conn) -> set:
     return {r["id"] for r in conn.execute("SELECT id FROM nodes").fetchall()}
 
 
-def _valid_edges(conn):
-    """양 끝이 모두 노드인 엣지만(끊긴 엣지 제외) — 뷰 export 용."""
+def subgraph_ids(conn, center: str, depth: int = 1, direction: str = "both") -> set:
+    """center 와 depth 홉 이내 이웃의 id 집합(대규모 그래프의 스코프 뷰용)."""
+    ids = {center}
+    for r in neighbors(conn, center, depth=depth, direction=direction):
+        ids.add(r["id"])
+    return ids
+
+
+def _view_nodes(conn, only):
+    rows = conn.execute("SELECT id, title, type, namespace, visibility, "
+                        "confidence, tags FROM nodes ORDER BY id").fetchall()
+    return [r for r in rows if only is None or r["id"] in only]
+
+
+def _valid_edges(conn, only=None):
+    """양 끝이 모두 노드인 엣지만(끊긴 엣지 제외). only 가 있으면 그 안의 엣지만 — 뷰 export 용."""
     ids = _node_ids(conn)
     rows = conn.execute(
         "SELECT source, type, target, weight FROM edges ORDER BY source, target"
     ).fetchall()
-    return [r for r in rows if r["source"] in ids and r["target"] in ids]
+    out = [r for r in rows if r["source"] in ids and r["target"] in ids]
+    if only is not None:
+        out = [r for r in out if r["source"] in only and r["target"] in only]
+    return out
 
 
 def _mermaid_id(s: str) -> str:
@@ -593,39 +611,65 @@ def _mermaid_id(s: str) -> str:
     return "".join(c if (c.isalnum() or c == "_") else "_" for c in s) or "n"
 
 
-def export_mermaid(conn, direction: str = "LR") -> str:
-    """그래프를 Mermaid flowchart 텍스트로. (깃허브 마크다운에 바로 렌더)"""
+def _xml_escape(s) -> str:
+    return (str(s or "").replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def export_mermaid(conn, direction: str = "LR", only=None) -> str:
+    """그래프를 Mermaid flowchart 텍스트로. (깃허브 마크다운에 바로 렌더, 소규모/스코프용)"""
     lines = [f"graph {direction}"]
-    for n in conn.execute("SELECT id, title FROM nodes ORDER BY id").fetchall():
+    for n in _view_nodes(conn, only):
         label = (n["title"] or n["id"]).replace('"', "'")
         lines.append(f'  {_mermaid_id(n["id"])}["{label}"]')
-    for e in _valid_edges(conn):
+    for e in _valid_edges(conn, only):
         lines.append(
             f'  {_mermaid_id(e["source"])} -->|{e["type"] or ""}| {_mermaid_id(e["target"])}')
     return "\n".join(lines)
 
 
-def export_dot(conn) -> str:
-    """그래프를 Graphviz DOT 텍스트로. (dot -Tsvg 등으로 렌더)"""
+def export_dot(conn, only=None) -> str:
+    """그래프를 Graphviz DOT 텍스트로. (dot/sfdp 로 렌더, 대형은 sfdp)"""
     lines = ["digraph eb {", "  rankdir=LR;"]
-    for n in conn.execute("SELECT id, title FROM nodes ORDER BY id").fetchall():
+    for n in _view_nodes(conn, only):
         label = (n["title"] or n["id"]).replace('"', "'")
         lines.append(f'  "{n["id"]}" [label="{label}"];')
-    for e in _valid_edges(conn):
+    for e in _valid_edges(conn, only):
         lines.append(f'  "{e["source"]}" -> "{e["target"]}" [label="{e["type"] or ""}"];')
     lines.append("}")
     return "\n".join(lines)
 
 
-def export_json(conn) -> dict:
-    """그래프를 {nodes:[...], edges:[...]} 로. (d3/cytoscape/vis.js 등)"""
-    nodes = [dict(r) for r in conn.execute(
-        "SELECT id, title, type, namespace, visibility, confidence, tags "
-        "FROM nodes ORDER BY id").fetchall()]
+def export_json(conn, only=None) -> dict:
+    """그래프를 {nodes:[...], edges:[...]} 로. (d3/cytoscape.js/sigma.js)"""
+    nodes = [dict(r) for r in _view_nodes(conn, only)]
     edges = [{"source": e["source"], "type": e["type"],
               "target": e["target"], "weight": e["weight"]}
-             for e in _valid_edges(conn)]
+             for e in _valid_edges(conn, only)]
     return {"nodes": nodes, "edges": edges}
+
+
+def export_graphml(conn, only=None) -> str:
+    """그래프를 GraphML(XML)로. (Gephi 등 전문 대규모 그래프 분석 도구용)"""
+    L = ['<?xml version="1.0" encoding="UTF-8"?>',
+         '<graphml xmlns="http://graphml.graphdrawing.org/xmlns">',
+         '  <key id="label" for="node" attr.name="label" attr.type="string"/>',
+         '  <key id="ntype" for="node" attr.name="type" attr.type="string"/>',
+         '  <key id="etype" for="edge" attr.name="type" attr.type="string"/>',
+         '  <key id="weight" for="edge" attr.name="weight" attr.type="double"/>',
+         '  <graph edgedefault="directed">']
+    for n in _view_nodes(conn, only):
+        L.append(f'    <node id="{_xml_escape(n["id"])}">'
+                 f'<data key="label">{_xml_escape(n["title"] or n["id"])}</data>'
+                 f'<data key="ntype">{_xml_escape(n["type"])}</data></node>')
+    for e in _valid_edges(conn, only):
+        w = e["weight"] if e["weight"] is not None else ""
+        L.append(f'    <edge source="{_xml_escape(e["source"])}" '
+                 f'target="{_xml_escape(e["target"])}">'
+                 f'<data key="etype">{_xml_escape(e["type"])}</data>'
+                 f'<data key="weight">{w}</data></edge>')
+    L += ["  </graph>", "</graphml>"]
+    return "\n".join(L)
 
 
 def validate(conn):
@@ -705,9 +749,12 @@ def main(argv=None):
     sp.add_argument("query")
     sp.add_argument("--limit", type=int, default=20)
 
-    sp = sub.add_parser("export", help="그래프를 다른 뷰로 추출(mermaid/dot/json)")
-    sp.add_argument("--format", choices=["mermaid", "dot", "json"], default="mermaid")
+    sp = sub.add_parser("export", help="그래프를 다른 뷰로 추출(mermaid/dot/json/graphml)")
+    sp.add_argument("--format", choices=["mermaid", "dot", "json", "graphml"],
+                    default="mermaid")
     sp.add_argument("--direction", default="LR", help="mermaid 방향(LR/TB 등)")
+    sp.add_argument("--center", help="이 노드 중심의 서브그래프만(대규모 스코프 뷰)")
+    sp.add_argument("--depth", type=int, default=1, help="--center 이웃 깊이(기본 1)")
 
     sp = sub.add_parser("suggest", help="연결 후보 제안(공통 이웃 + 태그 자카드)")
     sp.add_argument("id")
@@ -844,12 +891,15 @@ def main(argv=None):
             return 1
 
     elif args.cmd == "export":
+        only = (subgraph_ids(conn, args.center, args.depth) if args.center else None)
         if args.format == "mermaid":
-            print(export_mermaid(conn, args.direction))
+            print(export_mermaid(conn, args.direction, only=only))
         elif args.format == "dot":
-            print(export_dot(conn))
+            print(export_dot(conn, only=only))
+        elif args.format == "graphml":
+            print(export_graphml(conn, only=only))
         else:
-            print(json.dumps(export_json(conn), ensure_ascii=False, indent=2))
+            print(json.dumps(export_json(conn, only=only), ensure_ascii=False, indent=2))
 
     elif args.cmd == "search":
         res = search(conn, args.query, args.limit)

@@ -164,6 +164,18 @@ class EbTest(unittest.TestCase):
         eb.add_edge(str(self.dir), source="a", type="related_to", target="nope",
                     allow_missing=True)
 
+    # --- 백로그 6: 파일 SQLite 적재/재사용 --------------------------------- #
+    def test_file_db_build_and_reuse(self):
+        db = self.dir / "graph.sqlite"
+        conn = eb.load_db(str(self.dir), str(db), rebuild=True)
+        self.assertEqual(eb.stats(conn)["nodes"], 5)
+        conn.close()
+        self.assertTrue(db.exists())
+        # rebuild=False 면 CSV 재적재 없이 기존 테이블 사용
+        conn2 = eb.load_db(str(self.dir), str(db), rebuild=False)
+        self.assertEqual(eb.stats(conn2)["edges"], 4)
+        conn2.close()
+
 
 if __name__ == "__main__":
     unittest.main()

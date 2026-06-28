@@ -75,6 +75,18 @@ python eb.py add-edge --source playbook-x --type depends_on --target concept-typ
 - `add-node`: 빈 id / 중복 id 를 거부합니다. 파일 끝 개행이 없어도 안전하게 한 행을 덧붙입니다.
 - `add-edge`: `source`/`target` 이 `nodes.csv` 에 없으면 거부합니다(`--allow-missing` 으로 허용). 같은 엣지의 중복은 허용합니다(멀티그래프).
 
+### 대규모 — 파일 SQLite 캐시 (선택)
+
+기본은 매 호출마다 CSV를 인메모리로 적재합니다. 노드/엣지가 많으면 파일 SQLite로 한 번 빌드해 두고 재사용할 수 있습니다.
+
+```bash
+python eb.py --db graph.sqlite build-db        # CSV -> 파일 SQLite로 적재(인덱스 포함)
+python eb.py --db graph.sqlite stats           # CSV보다 최신이면 재적재 없이 재사용
+python eb.py --db graph.sqlite --rebuild stats # CSV 변경분을 강제 재적재
+```
+
+`--db` 사용 시 파일이 모든 CSV보다 최신이면 재적재를 건너뜁니다(staleness 검사). 인덱스는 `source/target/type`(엣지), `type`(노드)에 생성됩니다. CSV가 여전히 단일 원천이며, 파일 DB는 캐시일 뿐입니다.
+
 ## 선택: Google 스프레드시트 동기화 (`sync.py`)
 
 CSV가 원천이고 시트는 생성되는 **뷰**입니다. 3개의 CSV를 같은 이름의 탭(`_data`/`_edges`/`_meta`)으로 올립니다(단순 overwrite — CSV가 원천이라 증분 불필요).
@@ -85,16 +97,22 @@ export GOOGLE_APPLICATION_CREDENTIALS=~/.config/eb/sa-key.json   # 서비스 계
 export SPREADSHEET_ID=...               # 대상 시트 ID
 python sync.py --data data --dry-run    # 계획만
 python sync.py --data data              # 동기화
+python sync.py --data data --check      # 시트가 CSV와 일치하는지 검사(드리프트 감지)
 ```
 
+- **일관성/드리프트**: CSV가 단일 원천이라 동기화는 **CSV → 시트 단방향**입니다. 시트를 손편집했다면 `--check` 로 드리프트를 감지할 수 있습니다(어느 행이 다른지 보고만 하고 **역기록은 하지 않음** — CSV를 고쳐 다시 `sync` 합니다). 드리프트가 있으면 종료코드 1.
 - 인증: 키 파일 경로(`GOOGLE_APPLICATION_CREDENTIALS`) 또는 키 내용(`GOOGLE_SA_KEY`, CI용).
 - 대상 시트를 **서비스 계정 이메일과 편집자로 공유**해야 합니다(안 하면 `403`).
 - GitHub Action(`.github/workflows/sheets-sync.yml`): `data/*.csv` push 시 자동 동기화. Secret `GOOGLE_SA_KEY` + Variable `SPREADSHEET_ID` 설정.
 - GCP 프로젝트/서비스 계정/키 발급은 ib의 [`setup-gcp`](https://github.com/jhs512/ib) 절차와 동일합니다(키는 레포 밖에 두고 `.gitignore`의 `*.json`로 보호).
 
+## Claude Code 스킬 (`/eb`)
+
+`.claude/skills/eb/SKILL.md` 에 에이전트용 스킬이 들어 있습니다. 이 레포에서 Claude Code를 쓰면 `/eb` 로 호출해 데이터 규약·질의·안전한 지식 추가(중복/끊김 검사 + `validate`) 워크플로를 따르게 할 수 있습니다.
+
 ## 테스트
 
-네트워크/서드파티 없이 그래프 연산을 전부 검증합니다(19 케이스). `main`/PR push 마다 GitHub Actions(Python 3.10·3.12)에서 자동 실행됩니다([워크플로](.github/workflows/tests.yml)):
+네트워크/서드파티 없이 그래프 연산과 sync 드리프트 로직을 전부 검증합니다(24 케이스). `main`/PR push 마다 GitHub Actions(Python 3.10·3.12)에서 자동 실행됩니다([워크플로](.github/workflows/tests.yml)):
 
 ```bash
 python -m unittest discover -s tests -p "test_*.py"
@@ -111,9 +129,12 @@ eb/
 │   ├── edges.csv      # 엣지(관계)
 │   └── meta.csv       # 스키마 문서
 ├── eb.py              # 그래프 엔진(CSV -> SQLite -> 재귀 CTE 연산), stdlib only
-├── sync.py            # (선택) CSV -> Google 시트 동기화
+├── sync.py            # (선택) CSV -> Google 시트 동기화 + 드리프트 검사(--check)
 ├── requirements.txt   # sync 전용 의존성
-├── tests/test_eb.py   # 오프라인 테스트
+├── tests/
+│   ├── test_eb.py     # 코어 그래프 엔진 오프라인 테스트
+│   └── test_sync.py   # sync 드리프트(diff) 오프라인 테스트
+├── .claude/skills/eb/SKILL.md          # /eb 스킬(에이전트용 사용 가이드)
 └── .github/workflows/
     ├── tests.yml       # 코어 테스트 CI (의존성 0)
     └── sheets-sync.yml # (선택) 자동 동기화

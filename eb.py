@@ -53,10 +53,39 @@ def _read_csv(path: Path) -> list[dict]:
         return list(csv.DictReader(f))
 
 
-def load_db(data_dir: str = "data", db_path: str = ":memory:") -> sqlite3.Connection:
-    """3개의 CSV를 SQLite로 적재하고 연결을 반환한다."""
+def _has_tables(conn) -> bool:
+    rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('nodes','edges')"
+    ).fetchall()
+    return len(rows) == 2
+
+
+def _db_is_fresh(db_path: str, data_dir: str) -> bool:
+    """파일 DB가 존재하고 모든 CSV보다 최신이면 True(재적재 불필요)."""
+    p = Path(db_path)
+    if not p.exists() or p.stat().st_size == 0:
+        return False
+    db_m = p.stat().st_mtime
+    base = Path(data_dir)
+    for fn in (NODES_FILE, EDGES_FILE, META_FILE):
+        f = base / fn
+        if f.exists() and f.stat().st_mtime > db_m:
+            return False
+    return True
+
+
+def load_db(data_dir: str = "data", db_path: str = ":memory:",
+            rebuild: bool = True) -> sqlite3.Connection:
+    """3개의 CSV를 SQLite로 적재하고 연결을 반환한다.
+
+    db_path 가 파일이고 rebuild=False 이며 이미 테이블이 있으면, CSV 재적재 없이
+    그대로 연다(대규모 그래프에서 매 호출마다 CSV를 다시 읽지 않기 위함).
+    CSV가 원천이므로 기본은 rebuild=True.
+    """
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
+    if not rebuild and _has_tables(conn):
+        return conn
     cur = conn.cursor()
     cur.executescript(
         """
@@ -95,6 +124,8 @@ def load_db(data_dir: str = "data", db_path: str = ":memory:") -> sqlite3.Connec
         )
     cur.execute("CREATE INDEX i_src ON edges(source)")
     cur.execute("CREATE INDEX i_tgt ON edges(target)")
+    cur.execute("CREATE INDEX i_etype ON edges(type)")
+    cur.execute("CREATE INDEX i_ntype ON nodes(type)")
     conn.commit()
     return conn
 
@@ -430,6 +461,10 @@ def main(argv=None):
 
     p = argparse.ArgumentParser(prog="eb", description="Excel Brain — CSV 그래프 엔진")
     p.add_argument("--data", default="data", help="CSV 디렉토리 (기본: data)")
+    p.add_argument("--db", default=None,
+                   help="파일 SQLite 경로(대규모용 캐시). 생략 시 인메모리")
+    p.add_argument("--rebuild", action="store_true",
+                   help="--db 사용 시 CSV에서 강제 재적재(기본은 CSV보다 최신이면 재사용)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("stats", help="요약 통계")
@@ -437,6 +472,7 @@ def main(argv=None):
     sub.add_parser("validate", help="무결성 검사")
     sub.add_parser("types", help="노드/엣지 타입별 개수")
     sub.add_parser("components", help="약연결 요소(무방향)")
+    sub.add_parser("build-db", help="CSV를 파일 SQLite로 적재(대규모용, --db 필요)")
 
     sp = sub.add_parser("node", help="노드 상세 + 엣지/백링크")
     sp.add_argument("id")
@@ -505,7 +541,21 @@ def main(argv=None):
         print(f"✓ 엣지 추가: {s} -{ty}-> {t}")
         return 0
 
-    conn = load_db(args.data)
+    if args.cmd == "build-db" and not args.db:
+        print("✗ build-db 는 --db PATH 가 필요합니다")
+        return 1
+
+    if args.db:
+        force = args.rebuild or args.cmd == "build-db"
+        rebuild = force or not _db_is_fresh(args.db, args.data)
+        conn = load_db(args.data, args.db, rebuild=rebuild)
+        if args.cmd == "build-db":
+            s = stats(conn)
+            action = "재적재" if rebuild else "재사용(최신)"
+            print(f"✓ {args.db} {action}: 노드 {s['nodes']}, 엣지 {s['edges']}")
+            return 0
+    else:
+        conn = load_db(args.data)
 
     if args.cmd == "stats":
         s = stats(conn)

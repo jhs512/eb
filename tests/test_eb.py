@@ -441,5 +441,100 @@ class HealthTest(unittest.TestCase):
         self.assertTrue(any("ghost" in d for d in q["dangling"]))
 
 
+# --- 골든 트랜스크립트: eb-capture 회귀 ----------------------------------- #
+# 시나리오 문서: tests/fixtures/capture_caching_golden.md (plan을 함께 갱신).
+# 증류(LLM)는 박제하지 않고, 증류 결과를 엔진에 넣었을 때의 불변식만 검증한다.
+GOLDEN_SEED_NODES = [
+    ("pillar-caching", "캐싱은 재사용이다", "pillar", 0.9, "캐싱;성능"),
+    ("concept-cache-invalidation", "캐시 무효화", "concept", 0.8, "캐싱;무효화"),
+    ("fact-ttl", "TTL로 만료 관리", "fact", 0.85, "캐싱;무효화;ttl"),
+]
+GOLDEN_SEED_EDGES = [
+    ("concept-cache-invalidation", "part_of", "pillar-caching"),
+    ("fact-ttl", "supports", "concept-cache-invalidation"),
+]
+GOLDEN_CAPTURE_NODES = [
+    ("fact-cache-tradeoff", "캐싱은 신선도와 비용의 트레이드오프", "fact", 0.7, "캐싱;성능"),
+    ("decision-lru-product-api", "상품 API에 LRU 캐시 도입", "decision", 0.8, "캐싱;성능"),
+    ("concept-event-invalidation", "이벤트 기반 무효화", "concept", 0.75, "캐싱;무효화"),
+    ("source-meeting-20260628", "팀 회의 2026-06-28", "source", 0.95, "출처"),
+]
+# (source, type, target) — event->cache-invalidation 은 suggest 검증 후 마지막에 추가
+GOLDEN_CAPTURE_EDGES = [
+    ("fact-cache-tradeoff", "supports", "pillar-caching"),
+    ("decision-lru-product-api", "depends_on", "pillar-caching"),
+    ("fact-cache-tradeoff", "derived_from", "source-meeting-20260628"),
+    ("decision-lru-product-api", "derived_from", "source-meeting-20260628"),
+]
+GOLDEN_EVENT_EDGE = ("concept-event-invalidation", "related_to", "concept-cache-invalidation")
+
+
+class CaptureGoldenTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        (self.dir / "nodes.csv").write_text(
+            "id,title,type,namespace,visibility,summary,confidence,tags,body\n",
+            encoding="utf-8")
+        (self.dir / "edges.csv").write_text(
+            "source,type,target,weight,note\n", encoding="utf-8")
+        (self.dir / "meta.csv").write_text(
+            "field,applies_to,description\nid,node,x\n", encoding="utf-8")
+        for nid, title, typ, conf, tags in GOLDEN_SEED_NODES:
+            eb.add_node(str(self.dir), id=nid, title=title, type=typ,
+                        confidence=conf, tags=tags)
+        for s, ty, t in GOLDEN_SEED_EDGES:
+            eb.add_edge(str(self.dir), source=s, type=ty, target=t)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _apply_capture(self, include_event_edge):
+        for nid, title, typ, conf, tags in GOLDEN_CAPTURE_NODES:
+            eb.add_node(str(self.dir), id=nid, title=title, type=typ,
+                        confidence=conf, tags=tags)
+        edges = list(GOLDEN_CAPTURE_EDGES)
+        if include_event_edge:
+            edges.append(GOLDEN_EVENT_EDGE)
+        for s, ty, t in edges:
+            eb.add_edge(str(self.dir), source=s, type=ty, target=t)
+
+    def test_dedup_signal_finds_existing_invalidation(self):
+        # 불변식 1: seed에서 "무효화" 검색이 기존 노드를 찾아 중복 생성을 막는다
+        conn = eb.load_db(str(self.dir))
+        ids = [r["id"] for r in eb.search(conn, "무효화")]
+        conn.close()
+        self.assertIn("concept-cache-invalidation", ids)
+
+    def test_suggest_connects_event_node_to_invalidation(self):
+        # 불변식 2: 연결 엣지 없이 추가된 이벤트 노드의 최상위 제안 = cache-invalidation
+        self._apply_capture(include_event_edge=False)
+        conn = eb.load_db(str(self.dir))
+        sugg = eb.suggest(conn, "concept-event-invalidation")
+        conn.close()
+        self.assertEqual(sugg[0]["id"], "concept-cache-invalidation")
+
+    def test_golden_capture_integrates_cleanly(self):
+        # 불변식 3: plan 전체 적용 후 그래프가 일관되게 통합된다
+        self._apply_capture(include_event_edge=True)
+        conn = eb.load_db(str(self.dir))
+        self.assertEqual(eb.validate(conn), [])
+        self.assertEqual(eb.orphans(conn), [])
+        ids = {r["id"] for r in conn.execute("SELECT id FROM nodes").fetchall()}
+        expected = {n[0] for n in GOLDEN_SEED_NODES} | {n[0] for n in GOLDEN_CAPTURE_NODES}
+        self.assertTrue(expected <= ids)
+        # 이벤트 무효화가 기존 무효화에 형제로 붙었다
+        edge = conn.execute(
+            "SELECT 1 FROM edges WHERE source=? AND type=? AND target=?",
+            GOLDEN_EVENT_EDGE).fetchone()
+        self.assertIsNotNone(edge)
+        # 출처 추적: 회의 노드로 derived_from 백링크 2개
+        prov = {r["source"] for r in conn.execute(
+            "SELECT source FROM edges WHERE target=? AND type='derived_from'",
+            ("source-meeting-20260628",)).fetchall()}
+        conn.close()
+        self.assertEqual(prov, {"fact-cache-tradeoff", "decision-lru-product-api"})
+
+
 if __name__ == "__main__":
     unittest.main()

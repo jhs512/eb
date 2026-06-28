@@ -164,6 +164,26 @@ class EbTest(unittest.TestCase):
         eb.add_edge(str(self.dir), source="a", type="related_to", target="nope",
                     allow_missing=True)
 
+    # --- 백로그 7: 뷰 export (mermaid/dot/json) ---------------------------- #
+    def test_export_mermaid(self):
+        out = eb.export_mermaid(self.conn)
+        self.assertTrue(out.startswith("graph "))
+        self.assertIn('a["A"]', out)                # 노드
+        self.assertIn("a -->|part_of| b", out)      # 엣지(타입 라벨)
+        self.assertNotIn("zzz", out)                # 끊긴 엣지는 제외
+
+    def test_export_dot(self):
+        out = eb.export_dot(self.conn)
+        self.assertTrue(out.startswith("digraph"))
+        self.assertIn('"a" -> "b" [label="part_of"]', out)
+        self.assertIn("}", out)
+
+    def test_export_json(self):
+        data = eb.export_json(self.conn)
+        self.assertEqual(len(data["nodes"]), 5)
+        self.assertEqual(len(data["edges"]), 3)     # a->b, b->c, a->c (e->zzz 제외)
+        self.assertTrue(all(e["target"] != "zzz" for e in data["edges"]))
+
     # --- 백로그 6: 파일 SQLite 적재/재사용 --------------------------------- #
     def test_file_db_build_and_reuse(self):
         db = self.dir / "graph.sqlite"

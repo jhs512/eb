@@ -17,7 +17,7 @@ python eb.py node <id1>                     # 두 노드 맥락 비교
 python eb.py node <id2>
 python eb.py merge <from_id> <into_id>      # from의 엣지를 into로 재배선 후 from 삭제
 ```
-- `merge`는 `from_id` 엣지를 `into_id`로 옮기고 `from_id`를 지운다. 병합으로 생긴 자기 루프는 자동 제거.
+- `merge`는 `from_id` 엣지를 `into_id`로 옮기고 `from_id`를 지운다. 병합으로 생긴 자기 루프와 평행 중복 엣지는 자동 제거(기존 멀티그래프 중복은 보존).
 - **남길 쪽을 `into_id`** 로(보통 신뢰도·연결이 더 많은 노드). 병합 전 어느 쪽을 남길지 사용자에게 확인.
 
 ## 2. 고아 연결

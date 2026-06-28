@@ -194,7 +194,9 @@ def merge(data_dir: str, from_id: str, into_id: str) -> dict:
     """from_id 의 모든 엣지를 into_id 로 재배선하고 from_id 노드를 삭제한다.
 
     같은 노드 병합·존재하지 않는 노드는 ValueError. 병합으로 생긴 자기 루프는 버린다.
-    반환: {"into","repointed","dropped_selfloops"}.
+    병합으로 생긴 평행 중복((source,type,target) 동일)도 제거한다(기존 멀티그래프
+    중복은 보존 — 재배선으로 *생긴* 중복만 합친다).
+    반환: {"into","repointed","dropped_selfloops","dropped_dups"}.
     """
     f = (from_id or "").strip()
     t = (into_id or "").strip()
@@ -209,8 +211,9 @@ def merge(data_dir: str, from_id: str, into_id: str) -> dict:
     if missing:
         raise ValueError(f"없는 노드: {', '.join(missing)}")
 
-    repointed = dropped = 0
-    new_edges = []
+    dropped = dups = repointed = 0
+    # 1패스: 재배선 + 자기 루프 제거. 각 엣지를 (touched, key) 와 함께 보관.
+    entries = []  # (행, key, touched)
     for e in _read_csv(base / EDGES_FILE):
         s = (e.get("source") or "").strip()
         tg = (e.get("target") or "").strip()
@@ -219,16 +222,27 @@ def merge(data_dir: str, from_id: str, into_id: str) -> dict:
             e["source"] = t; s = t; touched = True
         if tg == f:
             e["target"] = t; tg = t; touched = True
-        if s == tg:  # 병합으로 생긴 자기 루프는 버린다(재배선으로 세지 않음)
+        if s == tg:  # 병합으로 생긴 자기 루프는 버린다
             dropped += 1
             continue
+        entries.append((e, (s, (e.get("type") or "").strip(), tg), touched))
+    # 2패스: 기존(untouched) 엣지는 모두 보존(멀티그래프). 재배선된 엣지는 기존/이미
+    # 유지된 엣지와 키가 겹치면 합친다 — 병합으로 *생긴* 평행 중복만 제거(순서 무관).
+    seen = {key for _, key, touched in entries if not touched}
+    new_edges = []
+    for e, key, touched in entries:
         if touched:
+            if key in seen:
+                dups += 1
+                continue
+            seen.add(key)
             repointed += 1
         new_edges.append(e)
     _write_all(base / EDGES_FILE, EDGE_COLS, new_edges)
     _write_all(base / NODES_FILE, NODE_COLS,
                [r for r in nodes if (r.get("id") or "").strip() != f])
-    return {"into": t, "repointed": repointed, "dropped_selfloops": dropped}
+    return {"into": t, "repointed": repointed,
+            "dropped_selfloops": dropped, "dropped_dups": dups}
 
 
 def add_edge(data_dir: str, *, source: str, type: str, target: str,
@@ -719,7 +733,8 @@ def main(argv=None):
             print(f"✗ {ex}")
             return 1
         print(f"✓ 병합: {args.from_id} -> {r['into']} "
-              f"(엣지 {r['repointed']}개 재배선, 자기 루프 {r['dropped_selfloops']}개 제거)")
+              f"(엣지 {r['repointed']}개 재배선, 자기 루프 {r['dropped_selfloops']}개 제거, "
+              f"중복 {r['dropped_dups']}개 제거)")
         return 0
 
     if args.cmd == "build-db" and not args.db:

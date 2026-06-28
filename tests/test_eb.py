@@ -351,6 +351,24 @@ class MergeTest(unittest.TestCase):
         # p->b, b->q 는 살아남아 재배선(2), a->b 만 자기 루프로 제거
         self.assertEqual(res["repointed"], 2)
 
+    def test_merge_dedupes_parallel_edges_it_creates(self):
+        # p->b 와 p->a 가 모두 있을 때 b를 a로 병합하면 p->a 가 둘이 되어야 하지만,
+        # 재배선으로 생긴 평행 중복은 합쳐 하나만 남는다.
+        eb.add_edge(str(self.dir), source="p", type="related_to", target="a")
+        res = eb.merge(str(self.dir), "b", "a")
+        # p->b(related_to) 가 p->a 로 재배선되며 기존 p->a 와 중복 → 1개 제거
+        self.assertEqual(res["dropped_dups"], 1)
+        pa = [e for e in self._edges() if e == ("p", "a")]
+        self.assertEqual(len(pa), 1)
+
+    def test_merge_keeps_preexisting_multigraph_dups(self):
+        # 병합과 무관한 기존 평행 중복은 보존된다(멀티그래프)
+        eb.add_edge(str(self.dir), source="p", type="related_to", target="q")
+        eb.add_edge(str(self.dir), source="p", type="related_to", target="q")
+        eb.merge(str(self.dir), "b", "a")  # p,q 와 무관
+        pq = [e for e in self._edges() if e == ("p", "q")]
+        self.assertEqual(len(pq), 2)
+
     def test_merge_self_rejected(self):
         with self.assertRaises(ValueError):
             eb.merge(str(self.dir), "a", "a")

@@ -1,0 +1,13 @@
+{
+  "nodes": [
+    {"id": "concept-attention-residue", "title": "주의 잔류물", "type": "concept", "tags": "집중;안티패턴", "summary": "작업 전환 후에도 이전 일에 주의가 남아 집중을 떨어뜨린다"},
+    {"id": "concept-shutdown-ritual", "title": "셧다운 의식", "type": "concept", "tags": "집중;실천", "summary": "하루 끝에 일을 의식적으로 닫아 주의 잔류물을 줄인다"},
+    {"id": "source-deepwork-followup", "title": "딥 워크 후속 메모", "type": "source", "tags": "출처", "summary": ""}
+  ],
+  "edges": [
+    {"source": "concept-attention-residue", "type": "related_to", "target": "concept-multitasking", "note": "멀티태스킹이 해로운 메커니즘"},
+    {"source": "concept-shutdown-ritual", "type": "supports", "target": "pillar-deep-work", "note": "딥워크 회복 루틴"},
+    {"source": "concept-attention-residue", "type": "derived_from", "target": "source-deepwork-followup", "note": "메모에서 정리"},
+    {"source": "concept-shutdown-ritual", "type": "derived_from", "target": "source-deepwork-followup", "note": "메모에서 정리"}
+  ]
+}

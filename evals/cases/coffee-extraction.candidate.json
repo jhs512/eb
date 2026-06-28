@@ -1,0 +1,13 @@
+{
+  "nodes": [
+    {"id": "pillar-coffee-extraction", "title": "커피는 추출이다", "type": "pillar", "tags": "커피;추출", "summary": "물로 원두의 향미를 녹여내는 것"},
+    {"id": "fact-grind-size", "title": "분쇄도가 추출을 좌우한다", "type": "fact", "tags": "커피;분쇄", "summary": "분쇄 입자 크기가 추출 속도·결과를 결정"},
+    {"id": "concept-pour-over", "title": "푸어오버", "type": "concept", "tags": "추출;방식", "summary": "물을 부어 중력으로 통과시키는 추출"},
+    {"id": "concept-espresso", "title": "에스프레소", "type": "concept", "tags": "추출;방식", "summary": "고압으로 빠르게 추출"}
+  ],
+  "edges": [
+    {"source": "fact-grind-size", "type": "supports", "target": "pillar-coffee-extraction", "note": "분쇄도가 추출 결과를 결정"},
+    {"source": "concept-pour-over", "type": "part_of", "target": "pillar-coffee-extraction", "note": "추출의 한 방식"},
+    {"source": "concept-espresso", "type": "part_of", "target": "pillar-coffee-extraction", "note": "추출의 한 방식"}
+  ]
+}

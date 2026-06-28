@@ -1,0 +1,13 @@
+{
+  "id": "deep-work-followup",
+  "seed": "기존: pillar-deep-work(딥 워크), concept-multitasking(멀티태스킹), concept-time-blocking(시간 블록킹), source-book-deepwork(책)",
+  "raw": "딥 워크 후속 메모: 작업 전환 시 '주의 잔류물'이 남아 다음 일의 집중을 떨어뜨린다 — 멀티태스킹이 해로운 이유다. 뉴포트는 하루 끝에 '셧다운 의식'으로 일을 닫으라고 한다. 시간 블록킹은 이미 적어둔 그 전략 맞다.",
+  "rubric": {
+    "min_nodes": 2,
+    "must_mention": ["주의 잔류물", "셧다운"],
+    "must_have_source": true,
+    "no_orphans": true,
+    "valid_edge_types": true,
+    "pass_score": 1.0
+  }
+}

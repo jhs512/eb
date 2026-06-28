@@ -1,0 +1,13 @@
+{
+  "id": "coffee-extraction",
+  "seed": "(빈 브레인)",
+  "raw": "커피는 물로 원두의 향미를 추출하는 것이다. 분쇄도가 추출 결과를 좌우한다. 푸어오버와 에스프레소는 대표적인 추출 방식이다.",
+  "rubric": {
+    "min_nodes": 3,
+    "must_mention": ["추출", "분쇄"],
+    "must_have_source": false,
+    "no_orphans": true,
+    "valid_edge_types": true,
+    "pass_score": 1.0
+  }
+}

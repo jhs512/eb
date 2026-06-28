@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://github.com/jhs512/eb/actions/workflows/tests.yml"><img src="https://github.com/jhs512/eb/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
-  <img src="https://img.shields.io/badge/Version-0.4.0-brightgreen.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Version-0.4.1-brightgreen.svg" alt="Version">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/Python-3.10+-3776ab.svg" alt="Python">
   <img src="https://img.shields.io/badge/Deps-stdlib_only_(core)-orange.svg" alt="stdlib only">
@@ -157,6 +157,13 @@ python -m unittest discover -s tests -p "test_*.py"
 python -m pytest tests/ -q
 ```
 
+3층으로 검증한다: **단위/골든**(엔진·캡처 불변식) + **계약**(스킬↔엔진 명령 일치, `test_skills.py`) + **evals**(eb-learn 증류의 비결정적 품질 — [`evals/`](evals/), 합격률 채점). evals 채점기는 결정적이라 단위테스트로 보호하고, 모델 호출만 선택적이다:
+
+```bash
+python evals/run_evals.py                       # 오프라인(녹화된 후보로 채점)
+python evals/run_evals.py --solver anthropic --runs 5   # 실제 모델 비결정성 측정
+```
+
 ## 저장소 구조
 
 ```
@@ -168,6 +175,7 @@ eb/
 ├── eb.py              # 그래프 엔진(CSV -> SQLite -> 재귀 CTE/구조 연산), stdlib only
 ├── ingest.py          # (선택) 유튜브·음성/영상 -> 전사 텍스트(자막 우선 + whisper)
 ├── sync.py            # (선택) CSV -> Google 시트 동기화 + 드리프트 검사(--check)
+├── evals/             # eb-learn 증류 품질 평가(비결정적, 합격률 채점)
 ├── tests/             # 오프라인 테스트(엔진 + sync)
 ├── CONTEXT.md         # 도메인 용어집
 ├── docs/adr/          # 아키텍처 결정 기록

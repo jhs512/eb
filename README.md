@@ -1,19 +1,61 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.1.0-brightgreen.svg" alt="Version">
+  <a href="https://github.com/jhs512/eb/actions/workflows/tests.yml"><img src="https://github.com/jhs512/eb/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
+  <img src="https://img.shields.io/badge/Version-0.2.0-brightgreen.svg" alt="Version">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/Python-3.10+-3776ab.svg" alt="Python">
   <img src="https://img.shields.io/badge/Deps-stdlib_only_(core)-orange.svg" alt="stdlib only">
 </p>
 
-# Excel Brain (eb) — CSV가 지식의 원천인 타입 그래프
+# Excel Brain (eb) — 에이전트의 무한·구조화된 기억
 
-> [Infinite Brain(ib)](https://github.com/jhs512/ib) 기반. 단, **마크다운이 없습니다.**
-> 오직 **3개의 CSV 파일**이 지식의 단일 원천이고, **Python이 CSV를 DB로 올려 그래프 연산**을 합니다.
-> 선택적으로 Google 스프레드시트에 동기화합니다.
+> 원자료를 넣고, 질문하라. 에이전트가 **타입 지식 그래프**를 만들고·유지하고·탐색한다.
+> 단, ib와 달리 지식은 마크다운이 아니라 **스프레드시트(CSV) 묶음**에 살고,
+> 그래프 탐색은 프롬프트가 아니라 **결정적 Python 엔진이 보증**한다.
 
-ib가 마크다운 노드/엣지였다면, eb는 같은 "타입 있는 노드 · 타입 있는 엣지" 모델을 **표(CSV)** 로 다룹니다. 엑셀·구글시트로 바로 열어 편집하고, `eb.py` 로 그래프를 질의합니다. 코어는 **서드파티 의존성이 전혀 없습니다**(파이썬 표준 라이브러리만).
+[Infinite Brain(ib)](https://github.com/JotaSXBR/obsidian-infinite-brain)에 영감을 받아, 같은 "타입 있는 노드 · 타입 있는 엣지" 모델을 **표(CSV)** 로 재해석했다.
 
-## 지식의 원천 — CSV 3개 (`data/`)
+## 문제
+
+AI 에이전트는 세션마다 잊는다. 개인 지식 시스템은 정보를 길고 느슨하게 연결된 문서 더미로 쌓아, 에이전트가 훑기 비싸고 부정확하다. eb는 지식을 **노드당 하나의 아이디어 + 방향·이유가 있는 엣지**의 그래프로 다뤄, 탐색과 검색을 싸고 정확하게 만든다.
+
+## 5개의 스킬 (`.claude/skills/eb-*`)
+
+ib의 다섯 스킬과 1:1로 대응한다. 각 스킬은 얇은 오케스트레이터이고, 실제 일은 `eb.py`가 한다.
+
+| 스킬 | 역할 | ib 대응 |
+|---|---|---|
+| **`eb-init`** | 현재 저장소에 엔진·씨앗 데이터 부트스트랩 | `init-vault` |
+| **`eb-capture`** | 원자료를 노드+엣지로 증류해 CSV에 반영(그래프-인지 캡처) | `convert-note` |
+| **`eb-recall`** | 그래프 조회/탐색 — 관련 서브그래프 | `query-vault` |
+| **`eb-curate`** | 중복 병합·고아 연결·촘촘화 | `organize-vault` |
+| **`eb-health`** | 신뢰도·고아·끊긴 엣지 점검(리뷰 큐) | `vault-health` |
+
+### 차별점 — 그래프 연산을 코드가 보증한다
+
+ib는 LLM이 그래프를 프롬프트로 다룬다. eb는 조회뿐 아니라 **쓰기에도 그래프 탐색**을 쓴다: `eb-capture`는 추가 *전에* 그래프를 조회해 중복을 잡고 연결처를 제안하며(`search`/`suggest`), `eb-curate`는 `merge`로 결정적으로 병합한다. 모두 stdlib only인 `eb.py`가 보증한다.
+
+## 빠른 시작
+
+다른 저장소에서 eb를 쓰려면 `skills-lock.json`에 `source: jhs512/eb`로 5스킬을 잠가 설치한다(기존 GitHub 스킬 설치와 동일 형식). 그다음:
+
+```bash
+# 1) 스킬 설치 후, 해당 저장소에서:
+/eb-init                        # jhs512/eb 의 고정 ref에서 eb.py·씨앗 CSV를 깔아준다
+
+# 2) 지식 쌓기 / 꺼내기 (에이전트가 스킬로 수행)
+/eb-capture  <원자료>           # 증류 → 중복/연결 조회 → 승인 → CSV 반영 → validate
+/eb-recall   <질문/키워드>      # 관련 서브그래프로 답
+/eb-curate                      # 중복 병합·고아 연결
+/eb-health                      # 건강도 + 리뷰 큐
+```
+
+`/eb-init` 절차와 `skills-lock.json` 예시는 [`eb-init` 스킬](.claude/skills/eb-init/SKILL.md) 참고. `<REF>`는 릴리스 태그로 핀하는 것을 권장한다.
+
+---
+
+## 레퍼런스
+
+### 지식의 원천 — CSV 3개 (`data/`)
 
 | 파일 | 1행 단위 | 컬럼 |
 |---|---|---|
@@ -21,54 +63,75 @@ ib가 마크다운 노드/엣지였다면, eb는 같은 "타입 있는 노드 ·
 | `data/edges.csv` | 관계 | `source, type, target, weight, note` |
 | `data/meta.csv` | 스키마 문서 | `field, applies_to, description` |
 
-- `tags`는 **세미콜론(`;`) 구분**(쉼표는 CSV 구분자라 피함). 예: `graph;schema`.
+- `id`는 kebab-case ASCII, 고유. `tags`는 **세미콜론(`;`) 구분**(쉼표는 CSV 구분자라 피함).
 - 엣지 타입: `supports / depends_on / part_of / related_to / derived_from / contradicts / preceded_by / followed_by / authored_by / tagged_with`.
 - 지식 추가 = CSV에 행 추가. 엑셀/시트/에디터 무엇으로든.
 
-## 그래프 엔진 — CSV를 DB로 (`eb.py`)
+### 그래프 엔진 — CSV를 DB로 (`eb.py`)
 
-`eb.py`는 3개의 CSV를 **인메모리 SQLite**로 적재한 뒤, **SQLite 재귀 CTE(`WITH RECURSIVE`)** 로 그래프 연산을 합니다. 별도 그래프 라이브러리 없이 BFS 이웃 탐색·최단 경로가 됩니다.
+`eb.py`는 3개의 CSV를 **인메모리 SQLite**로 적재한 뒤, **재귀 CTE(`WITH RECURSIVE`)** 와 표준 라이브러리만으로 그래프 연산을 한다.
 
 ```bash
-python eb.py stats                                   # 요약: 노드/엣지 수, 평균 차수, 타입 분포
+# 읽기 / 조회
+python eb.py stats                                   # 노드/엣지 수, 평균 차수, 타입 분포
+python eb.py search 그래프                            # title/summary/tags/body 부분일치(일치 필드 수로 랭크)
 python eb.py node decision-csv-source                # 노드 상세 + 나가는 엣지 + 백링크
 python eb.py neighbors pillar-knowledge-graph --depth 2 --direction both
-python eb.py path fact-sqlite-cte pillar-knowledge-graph   # 최단 경로(홉 수)
+python eb.py path fact-sqlite-cte pillar-knowledge-graph            # 무가중 최단경로(홉)
+python eb.py path fact-sqlite-cte pillar-knowledge-graph --weighted # 가중 최단경로(다익스트라)
+python eb.py suggest pillar-knowledge-graph          # 연결 후보(공통 이웃 + 태그 자카드)
+python eb.py components                              # 약연결 요소(무방향)
+python eb.py degree --top 5                          # 차수 분포 + 차수 중심성
 python eb.py orphans                                 # 엣지 없는 고아 노드
+python eb.py health                                  # 건강도 요약 + 리뷰 큐(저신뢰/고아/끊긴 엣지)
 python eb.py validate                                # 끊긴 엣지/빈 필드 검사
 python eb.py types                                   # 노드/엣지 타입별 개수
+
+# 쓰기 (지식 추가/정제) — 추가 후 반드시 validate
+python eb.py add-node --id playbook-x --title "엑스 플레이북" --type playbook --tags "graph;howto"
+python eb.py add-edge --source playbook-x --type depends_on --target concept-typed-node --weight 0.6 --note "전제"
+python eb.py merge old-dup-id canonical-id           # 중복 병합(from 엣지를 into로 재배선 후 삭제)
+
 # CSV 디렉토리 변경: --data <경로> (기본 data)
 ```
 
-예시 출력:
+- **search**: `title·summary·tags·body`에서 대소문자 무시 부분일치, 일치 필드 수로 랭크(한국어 포함).
+- **suggest**: 공통 이웃 수 + 태그 자카드로 아직 직접 연결 안 된 후보를 점수화. `eb-capture`(붙일 곳)와 `eb-curate`(촘촘화)가 쓴다.
+- **merge**: `from` 엣지를 `into`로 재배선하고 `from` 노드를 삭제. self-merge·없는 노드는 거부, 병합으로 생긴 자기 루프·평행 중복은 제거(기존 멀티그래프 중복은 보존).
+- **health**: stats 요약 + 리뷰 큐(`--confidence` 임계값). 그래프가 스스로 약한 곳을 드러낸다.
+- **path**: 기본은 무가중 BFS(홉 최소). `--weighted` 면 `weight`를 비용으로 본 다익스트라.
+- **add-node/add-edge**: 빈/중복 id, 없는 노드 참조를 거부(`--allow-missing`으로 우회).
 
+### 대규모 — 파일 SQLite 캐시 (선택)
+
+```bash
+python eb.py --db graph.sqlite build-db        # CSV -> 파일 SQLite로 적재(인덱스 포함)
+python eb.py --db graph.sqlite stats           # CSV보다 최신이면 재적재 없이 재사용
+python eb.py --db graph.sqlite --rebuild stats # CSV 변경분을 강제 재적재
 ```
-$ python eb.py path fact-sqlite-cte pillar-knowledge-graph
-fact-sqlite-cte -> decision-csv-source -> pillar-knowledge-graph   (홉 2)
-```
 
-`--direction`: `out`(나가는 엣지), `in`(들어오는/백링크), `both`(무방향). 사이클은 방문 경로 검사로 자동 회피합니다.
+CSV가 여전히 단일 원천이며, 파일 DB는 캐시일 뿐이다(staleness 검사로 최신이면 재적재 생략).
 
-## 선택: Google 스프레드시트 동기화 (`sync.py`)
+### 선택: Google 스프레드시트 동기화 (`sync.py`)
 
-CSV가 원천이고 시트는 생성되는 **뷰**입니다. 3개의 CSV를 같은 이름의 탭(`_data`/`_edges`/`_meta`)으로 올립니다(단순 overwrite — CSV가 원천이라 증분 불필요).
+CSV가 원천이고 시트는 파생되는 **뷰**다. 3개의 CSV를 같은 이름의 탭(`_data`/`_edges`/`_meta`)으로 단방향 동기화한다.
 
 ```bash
 pip install -r requirements.txt        # gspread, google-auth (sync 전용)
-export GOOGLE_APPLICATION_CREDENTIALS=~/.config/eb/sa-key.json   # 서비스 계정 키
-export SPREADSHEET_ID=...               # 대상 시트 ID
+export GOOGLE_APPLICATION_CREDENTIALS=~/.config/eb/sa-key.json
+export SPREADSHEET_ID=...
 python sync.py --data data --dry-run    # 계획만
 python sync.py --data data              # 동기화
+python sync.py --data data --check      # 드리프트 감지(역기록 없음 — CSV를 고쳐 다시 sync)
 ```
 
-- 인증: 키 파일 경로(`GOOGLE_APPLICATION_CREDENTIALS`) 또는 키 내용(`GOOGLE_SA_KEY`, CI용).
-- 대상 시트를 **서비스 계정 이메일과 편집자로 공유**해야 합니다(안 하면 `403`).
-- GitHub Action(`.github/workflows/sheets-sync.yml`): `data/*.csv` push 시 자동 동기화. Secret `GOOGLE_SA_KEY` + Variable `SPREADSHEET_ID` 설정.
-- GCP 프로젝트/서비스 계정/키 발급은 ib의 [`setup-gcp`](https://github.com/jhs512/ib) 절차와 동일합니다(키는 레포 밖에 두고 `.gitignore`의 `*.json`로 보호).
+- 동기화는 **CSV → 시트 단방향**. 시트를 손편집했다면 `--check`로 드리프트를 감지한다(보고만, 드리프트 시 종료코드 1).
+- 대상 시트를 **서비스 계정 이메일과 편집자로 공유**해야 한다(안 하면 `403`).
+- GitHub Action(`.github/workflows/sheets-sync.yml`): `data/*.csv` push 시 자동 동기화. Secret `GOOGLE_SA_KEY` + Variable `SPREADSHEET_ID`.
 
 ## 테스트
 
-네트워크/서드파티 없이 그래프 연산을 전부 검증합니다(11 케이스):
+네트워크/서드파티 없이 그래프 엔진과 sync 드리프트 로직을 전부 검증한다. `main`/PR push 마다 GitHub Actions(Python 3.10·3.12)에서 자동 실행([워크플로](.github/workflows/tests.yml)).
 
 ```bash
 python -m unittest discover -s tests -p "test_*.py"
@@ -84,11 +147,15 @@ eb/
 │   ├── nodes.csv      # 노드(지식의 원천)
 │   ├── edges.csv      # 엣지(관계)
 │   └── meta.csv       # 스키마 문서
-├── eb.py              # 그래프 엔진(CSV -> SQLite -> 재귀 CTE 연산), stdlib only
-├── sync.py            # (선택) CSV -> Google 시트 동기화
-├── requirements.txt   # sync 전용 의존성
-├── tests/test_eb.py   # 오프라인 테스트
-└── .github/workflows/sheets-sync.yml   # (선택) 자동 동기화
+├── eb.py              # 그래프 엔진(CSV -> SQLite -> 재귀 CTE/구조 연산), stdlib only
+├── sync.py            # (선택) CSV -> Google 시트 동기화 + 드리프트 검사(--check)
+├── tests/             # 오프라인 테스트(엔진 + sync)
+├── CONTEXT.md         # 도메인 용어집
+├── docs/adr/          # 아키텍처 결정 기록
+├── .claude/skills/eb-*/SKILL.md     # 5스킬(init/capture/recall/curate/health)
+└── .github/workflows/
+    ├── tests.yml       # 코어 테스트 CI (의존성 0)
+    └── sheets-sync.yml # (선택) 자동 동기화
 ```
 
 ## ib와의 관계
@@ -96,8 +163,9 @@ eb/
 | | Infinite Brain (ib) | Excel Brain (eb) |
 |---|---|---|
 | 원천 | 마크다운 노드 + frontmatter | **CSV 3개** |
-| 엔진 | 스킬(프롬프트) 기반 그래프 탐색 | **Python(SQLite 재귀 CTE) 그래프 연산** |
+| 엔진 | 스킬(프롬프트) 기반 그래프 탐색 | **Python(SQLite 재귀 CTE + 구조 연산) — 결정적** |
 | 편집 | 에디터/Obsidian | **엑셀/구글시트/에디터** |
+| 제품 | 5스킬 | **5스킬 (init/capture/recall/curate/health)** |
 | 시트 | 마크다운 → 시트 미러(증분) | CSV → 시트 동기화(overwrite) |
 
 [MIT](LICENSE)

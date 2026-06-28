@@ -1,4 +1,4 @@
-# 골든 트랜스크립트 — eb-capture (캐싱 도메인)
+# 골든 트랜스크립트 — eb-learn (캐싱 도메인)
 
 `tests/test_eb.py`의 `CaptureGoldenTest`가 이 시나리오의 **엔진 불변식**을 박제한다.
 증류(자연어 → 타입 노드) 자체는 LLM이 하는 비결정적 작업이라 strict assert 하지 않고,

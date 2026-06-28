@@ -1,9 +1,9 @@
 ---
-name: eb-init
+name: eb-setup
 description: 현재 저장소에 Excel Brain(eb) 엔진(eb.py)과 씨앗 CSV를 깔아 지식 그래프를 부트스트랩하는 스킬. 트리거 - "eb 초기화", "init eb", "eb 셋업", "지식 그래프 시작", "eb.py 깔아줘".
 ---
 
-# eb-init — Excel Brain 부트스트랩
+# eb-setup — Excel Brain 부트스트랩
 
 현재 저장소에 eb **엔진과 씨앗 데이터**를 깔아 곧바로 지식을 쌓을 수 있게 한다. 엔진은 스킬에 동봉하지 않고, `jhs512/eb`의 **고정 ref에서 내려받는다**([ADR-0002](../../../docs/adr/0002-distribution-skills-first-fetch.md)) — 엔진은 한 곳에서만 관리되고 버전 핀이 가능하다.
 
@@ -24,6 +24,13 @@ curl -fsSL https://raw.githubusercontent.com/jhs512/eb/<REF>/data/meta.csv -o da
 ```
 시트 동기화(`sync.py`)나 CI(`.github/workflows/`)도 원하면 같은 방식으로 가져온다(선택).
 
+유튜브·음성/영상 흡수를 쓸 거면 미디어 도구도 가져온다(선택, 서드파티 필요):
+```bash
+curl -fsSL https://raw.githubusercontent.com/jhs512/eb/<REF>/ingest.py -o ingest.py
+curl -fsSL https://raw.githubusercontent.com/jhs512/eb/<REF>/requirements-ingest.txt -o requirements-ingest.txt
+pip install -r requirements-ingest.txt   # 유튜브 자막. 음성 파일은 추가로 openai-whisper(+ffmpeg)
+```
+
 ## 3. 씨앗 CSV 만들기 (빈 그래프)
 `nodes.csv`/`edges.csv`는 헤더만 둔 **빈 그래프**로 시작한다(엑셀/시트/에디터로도 열림):
 ```bash
@@ -38,7 +45,7 @@ python eb.py validate     # 문제 없음
 ```
 
 ## 5. 다음
-- 지식 추가는 `eb-capture`, 조회는 `eb-recall`, 정제는 `eb-curate`, 점검은 `eb-health`.
+- 지식 추가는 `eb-learn`, 조회는 `eb-ask`, 정제는 `eb-clean`, 점검은 `eb-check`.
 - 엔진을 갱신하려면 `<REF>`를 올려 다시 이 절차를 돌린다(데이터 CSV는 보존).
 
 ## 부록: 5스킬 설치 (skills-lock)
@@ -47,12 +54,12 @@ python eb.py validate     # 문제 없음
 {
   "version": 1,
   "skills": {
-    "eb-init":    { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-init/SKILL.md" },
-    "eb-capture": { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-capture/SKILL.md" },
-    "eb-recall":  { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-recall/SKILL.md" },
-    "eb-curate":  { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-curate/SKILL.md" },
-    "eb-health":  { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-health/SKILL.md" }
+    "eb-setup":    { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-setup/SKILL.md" },
+    "eb-learn": { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-learn/SKILL.md" },
+    "eb-ask":  { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-ask/SKILL.md" },
+    "eb-clean":  { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-clean/SKILL.md" },
+    "eb-check":  { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-check/SKILL.md" }
   }
 }
 ```
-설치 후 그 저장소에서 `/eb-init`을 실행하면 엔진·씨앗 데이터가 깔린다.
+설치 후 그 저장소에서 `/eb-setup`을 실행하면 엔진·씨앗 데이터가 깔린다.

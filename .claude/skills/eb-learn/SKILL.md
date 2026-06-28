@@ -1,9 +1,9 @@
 ---
-name: eb-capture
-description: 원자료(텍스트/대화)를 Excel Brain(eb)의 타입 노드+엣지로 증류해 CSV에 반영하는 그래프-인지 캡처 스킬. 추가 전에 그래프를 조회해 중복을 피하고 연결처를 찾는다. 트리거 - "캡처", "지식 추가", "노드 추가", "이거 기억해", "그래프에 넣어줘".
+name: eb-learn
+description: 원자료(텍스트·대화·파일, 그리고 유튜브·음성/영상)를 Excel Brain(eb)의 타입 노드+엣지로 증류해 CSV에 반영하는 그래프-인지 캡처 스킬. 추가 전에 그래프를 조회해 중복을 피하고 연결처를 찾는다. 트리거 - "지식 추가", "이거 기억해", "그래프에 넣어줘", "이 영상에서 배워", "유튜브 정리해줘", "녹음 흡수".
 ---
 
-# eb-capture — 그래프-인지 캡처
+# eb-learn — 그래프-인지 캡처
 
 원자료를 노드+엣지로 **증류**해 `data/`의 CSV에 반영한다. 핵심은 **추가하기 전에 그래프를 먼저 조회**해 고아·중복을 만들지 않는 것이다([ADR-0003](../../../docs/adr/0003-graph-aware-capture.md)). 실제 연산은 모두 `eb.py`가 보증한다.
 
@@ -14,9 +14,24 @@ description: 원자료(텍스트/대화)를 Excel Brain(eb)의 타입 노드+엣
 - 엣지: `source,type,target,weight,note`
 - `id`는 kebab-case ASCII 고유. `tags`는 **세미콜론(`;`) 구분**. 엣지 타입: `supports / depends_on / part_of / related_to / derived_from / contradicts / preceded_by / followed_by / authored_by / tagged_with`.
 
+## 0단계 — 소스에서 텍스트 얻기 (입력 감지)
+
+입력이 무엇이든 결국 **텍스트로 모아 같은 파이프라인**을 탄다.
+
+- **텍스트/붙여넣기·파일(.md/.txt)** → 그대로 사용(제로 의존성).
+- **유튜브 URL / 음성·영상 파일** → 선택 도구 `ingest.py`로 **전사** 후 사용:
+  ```bash
+  python ingest.py "<유튜브 URL>"      # 자막 우선(youtube-transcript-api)
+  python ingest.py path/to/audio.mp3   # whisper 로컬 전사(자막 없는 음성/영상)
+  ```
+  - 코어 `eb.py`는 stdlib only. 전사는 **선택 의존**이다: `pip install -r requirements-ingest.txt`(자막), 음성 파일은 `pip install openai-whisper`(+ ffmpeg). 없으면 `ingest.py`가 설치 안내를 낸다.
+  - 미디어를 흡수할 때는 **그 미디어를 `source` 노드로** 만들고(아래 출처 추적), 추출한 지식을 `derived_from`으로 잇는다.
+
+전사 텍스트를 손에 쥐면 아래 1~5단계는 동일하다.
+
 ## 캡처 파이프라인 (5단계)
 
-1. **증류** — 원자료를 후보 노드(원자적 아이디어 1개=노드 1개)와 후보 엣지로 쪼갠다. 각 후보에 type·summary·tags 초안을 단다.
+1. **증류** — 원자료(또는 전사 텍스트)를 후보 노드(원자적 아이디어 1개=노드 1개)와 후보 엣지로 쪼갠다. 각 후보에 type·summary·tags 초안을 단다.
 
 2. **그래프 조회 (추가 전!)** — 후보마다 기존 그래프를 확인한다.
    ```bash
@@ -46,5 +61,5 @@ description: 원자료(텍스트/대화)를 Excel Brain(eb)의 타입 노드+엣
 
 ## 주의
 - 용어는 [CONTEXT.md](../../../CONTEXT.md)를 따른다(증류/연결 제안/그래프-인지 캡처 …).
-- 코어(`eb.py`)는 의존성 0 유지. 조회는 `eb-recall`, 정제는 `eb-curate`.
+- 코어(`eb.py`)는 의존성 0 유지. 조회는 `eb-ask`, 정제는 `eb-clean`.
 - 직접 CSV를 엑셀/에디터로 편집해도 되지만, CLI가 중복/끊김을 막아준다. **추가 후 반드시 `validate`.**

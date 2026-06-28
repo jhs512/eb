@@ -24,15 +24,15 @@ AI 에이전트는 세션마다 잊는다. 개인 지식 시스템은 정보를 
 
 | 스킬 | 역할 |
 |---|---|
-| **`eb-init`** | 현재 저장소에 엔진·씨앗 데이터 부트스트랩 |
-| **`eb-capture`** | 원자료를 노드+엣지로 증류해 CSV에 반영(그래프-인지 캡처) |
-| **`eb-recall`** | 그래프 조회/탐색 — 관련 서브그래프 |
-| **`eb-curate`** | 중복 병합·고아 연결·촘촘화 |
-| **`eb-health`** | 신뢰도·고아·끊긴 엣지 점검(리뷰 큐) |
+| **`eb-setup`** | 현재 저장소에 엔진·씨앗 데이터 부트스트랩 |
+| **`eb-learn`** | 원자료(텍스트·파일·**유튜브·음성/영상**)를 노드+엣지로 증류해 CSV에 반영(그래프-인지 캡처) |
+| **`eb-ask`** | 그래프 조회/탐색 — 관련 서브그래프 |
+| **`eb-clean`** | 중복 병합·고아 연결·촘촘화 |
+| **`eb-check`** | 신뢰도·고아·끊긴 엣지 점검(리뷰 큐) |
 
 ### 차별점 — 그래프 연산을 코드가 보증한다
 
-eb는 조회뿐 아니라 **쓰기에도 그래프 탐색**을 쓴다: `eb-capture`는 추가 *전에* 그래프를 조회해 중복을 잡고 연결처를 제안하며(`search`/`suggest`), `eb-curate`는 `merge`로 결정적으로 병합한다. 그래프 연산을 프롬프트가 아니라 stdlib only `eb.py`가 결정적으로 보증한다.
+eb는 조회뿐 아니라 **쓰기에도 그래프 탐색**을 쓴다: `eb-learn`는 추가 *전에* 그래프를 조회해 중복을 잡고 연결처를 제안하며(`search`/`suggest`), `eb-clean`는 `merge`로 결정적으로 병합한다. 그래프 연산을 프롬프트가 아니라 stdlib only `eb.py`가 결정적으로 보증한다.
 
 ## 빠른 시작
 
@@ -40,16 +40,28 @@ eb는 조회뿐 아니라 **쓰기에도 그래프 탐색**을 쓴다: `eb-captu
 
 ```bash
 # 1) 스킬 설치 후, 해당 저장소에서:
-/eb-init                        # jhs512/eb 의 고정 ref에서 eb.py·씨앗 CSV를 깔아준다
+/eb-setup                        # jhs512/eb 의 고정 ref에서 eb.py·씨앗 CSV를 깔아준다
 
 # 2) 지식 쌓기 / 꺼내기 (에이전트가 스킬로 수행)
-/eb-capture  <원자료>           # 증류 → 중복/연결 조회 → 승인 → CSV 반영 → validate
-/eb-recall   <질문/키워드>      # 관련 서브그래프로 답
-/eb-curate                      # 중복 병합·고아 연결
-/eb-health                      # 건강도 + 리뷰 큐
+/eb-learn  <원자료 | 유튜브 URL | 음성·영상 파일>   # 증류 → 중복/연결 조회 → 승인 → CSV 반영 → validate
+/eb-ask   <질문/키워드>      # 관련 서브그래프로 답
+/eb-clean                      # 중복 병합·고아 연결
+/eb-check                      # 건강도 + 리뷰 큐
 ```
 
-`/eb-init` 절차와 `skills-lock.json` 예시는 [`eb-init` 스킬](.claude/skills/eb-init/SKILL.md) 참고. `<REF>`는 릴리스 태그로 핀하는 것을 권장한다.
+`/eb-setup` 절차와 `skills-lock.json` 예시는 [`eb-setup` 스킬](.claude/skills/eb-setup/SKILL.md) 참고. `<REF>`는 릴리스 태그로 핀하는 것을 권장한다.
+
+### 유튜브·음성/영상 흡수 (선택)
+
+`eb-learn`은 텍스트뿐 아니라 미디어도 흡수한다. 전사는 서드파티가 필요해 **선택 도구 `ingest.py`** 로 분리돼 있다(코어 `eb.py`는 stdlib only — [ADR-0004](docs/adr/0004-media-ingestion-optional-captions-first.md)).
+
+```bash
+pip install -r requirements-ingest.txt          # 유튜브 자막(youtube-transcript-api)
+python ingest.py "https://youtu.be/<id>"        # 자막 → 전사 텍스트(stdout)
+python ingest.py talk.mp3                        # 음성/영상 → whisper 전사(pip install openai-whisper + ffmpeg)
+```
+
+자막 우선이라 자막 있는 유튜브는 ML·다운로드 없이 즉시 동작하고, 자막 없는 음성/영상만 whisper로 폴백한다. 전사 텍스트는 그대로 `eb-learn`의 그래프-인지 캡처에 들어가며, 그 미디어는 `source` 노드로 `derived_from` 추적된다.
 
 > **바로 돌려보고 싶다면** → [`samples/`](samples/) 에 실행 가능한 예제 브레인이 있다. `cd samples && python eb.py search 집중` 으로 바로 동작한다. 지식을 추가하는 캡처 흐름은 [`samples/SCENARIO.md`](samples/SCENARIO.md) 참고.
 
@@ -98,7 +110,7 @@ python eb.py merge old-dup-id canonical-id           # 중복 병합(from 엣지
 ```
 
 - **search**: `title·summary·tags·body`에서 대소문자 무시 부분일치, 일치 필드 수로 랭크(한국어 포함).
-- **suggest**: 공통 이웃 수 + 태그 자카드로 아직 직접 연결 안 된 후보를 점수화. `eb-capture`(붙일 곳)와 `eb-curate`(촘촘화)가 쓴다.
+- **suggest**: 공통 이웃 수 + 태그 자카드로 아직 직접 연결 안 된 후보를 점수화. `eb-learn`(붙일 곳)와 `eb-clean`(촘촘화)가 쓴다.
 - **merge**: `from` 엣지를 `into`로 재배선하고 `from` 노드를 삭제. self-merge·없는 노드는 거부, 병합으로 생긴 자기 루프·평행 중복은 제거(기존 멀티그래프 중복은 보존).
 - **health**: stats 요약 + 리뷰 큐(`--confidence` 임계값). 그래프가 스스로 약한 곳을 드러낸다.
 - **path**: 기본은 무가중 BFS(홉 최소). `--weighted` 면 `weight`를 비용으로 본 다익스트라.
@@ -150,6 +162,7 @@ eb/
 │   ├── edges.csv      # 엣지(관계)
 │   └── meta.csv       # 스키마 문서
 ├── eb.py              # 그래프 엔진(CSV -> SQLite -> 재귀 CTE/구조 연산), stdlib only
+├── ingest.py          # (선택) 유튜브·음성/영상 -> 전사 텍스트(자막 우선 + whisper)
 ├── sync.py            # (선택) CSV -> Google 시트 동기화 + 드리프트 검사(--check)
 ├── tests/             # 오프라인 테스트(엔진 + sync)
 ├── CONTEXT.md         # 도메인 용어집

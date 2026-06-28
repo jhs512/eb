@@ -1,11 +1,11 @@
 # samples — 실행 가능한 eb 플레이그라운드
 
-`eb-init`이 빈 저장소에 만들어 주는 결과물과 **같은 형태**의 자체완결 예제 브레인.
+`eb-setup`이 빈 저장소에 만들어 주는 결과물과 **같은 형태**의 자체완결 예제 브레인.
 엔진(`eb.py`)과 데이터(`data/`)가 함께 있어, clone 후 바로 돌려볼 수 있다.
 
-> `eb.py`는 [`eb-init`](../.claude/skills/eb-init/SKILL.md) 절차로 `jhs512/eb`의 고정 ref
+> `eb.py`는 [`eb-setup`](../.claude/skills/eb-setup/SKILL.md) 절차로 `jhs512/eb`의 고정 ref
 > **`v0.2.0`** 에서 fetch한 스냅샷이다(실사용자 저장소가 갖게 될 모습 그대로 — 그래서 루트
-> 엔진과 별개로 여기 동봉됨). 엔진을 갱신하려면 samples/ 에서 eb-init 절차를 다시 돌린다.
+> 엔진과 별개로 여기 동봉됨). 엔진을 갱신하려면 samples/ 에서 eb-setup 절차를 다시 돌린다.
 
 ## 바로 해보기
 
@@ -23,7 +23,7 @@ python eb.py validate
 
 ## 이 브레인 (『딥 워크』)
 
-`eb-capture` 플로우(증류 → 그래프-인지 추가 → validate)로 쌓고, `eb-curate`로 정리(중복
+`eb-learn` 플로우(증류 → 그래프-인지 추가 → validate)로 쌓고, `eb-clean`로 정리(중복
 `merge` + 고아 `suggest` 연결)한 결과다. 엣지 타입 `supports / part_of / contradicts /
 related_to / derived_from` 를 담고 있고, 출처 노드 `source-book-deepwork`로 `derived_from`
 추적이 걸려 있다.
@@ -36,4 +36,4 @@ python eb.py add-edge --source concept-flow --type related_to --target pillar-de
 python eb.py validate
 ```
 
-내 진짜 브레인을 새로 시작하려면, 빈 폴더에서 [`eb-init`](../.claude/skills/eb-init/SKILL.md) 절차를 따른다.
+내 진짜 브레인을 새로 시작하려면, 빈 폴더에서 [`eb-setup`](../.claude/skills/eb-setup/SKILL.md) 절차를 따른다.

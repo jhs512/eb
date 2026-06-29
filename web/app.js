@@ -333,13 +333,16 @@ async function ensureLLM() {
   return llm;
 }
 function uiIntent(q) {                            // 자연어 UI 제어 (LLM 없이 규칙으로)
-  const s = q.replace(/\s/g, "");
-  if (/(상하|세로|수직)(로|으로)?(해|바꿔|만들|배치)?/.test(s)) return () => { setLayout(false); return "화면을 상하 분할로 바꿨어요."; };
-  if (/(좌우|가로|수평)(로|으로)?(해|바꿔|만들|배치)?/.test(s)) return () => { setLayout(true); return "화면을 좌우 분할로 바꿨어요."; };
-  const p = /문서/.test(s) ? "docPanel" : /그래프/.test(s) ? "graphPanel" : /채팅/.test(s) ? "chatPanel" : null;
+  const s = (q || "").trim();
+  if (s.length > 24) return null;                // 긴 문장은 명령 아님(질문일 확률↑)
+  const c = s.replace(/\s/g, "");
+  if (/(상하|세로|수직)(분할|배치|보기|로|으로|모드)/.test(c) || /^(상하|세로|수직)$/.test(c)) return () => { setLayout(false); return "화면을 상하 분할로 바꿨어요."; };
+  if (/(좌우|가로|수평)(분할|배치|보기|로|으로|모드)/.test(c) || /^(좌우|가로|수평)$/.test(c)) return () => { setLayout(true); return "화면을 좌우 분할로 바꿨어요."; };
+  const p = /문서/.test(c) ? "docPanel" : /그래프/.test(c) ? "graphPanel" : /채팅/.test(c) ? "chatPanel" : null;
+  if (!p) return null;
   const nm = { docPanel: "문서", graphPanel: "그래프", chatPanel: "채팅" }[p];
-  if (p && /(숨겨|숨김|닫|접|최소화|감춰|hide|꺼|끄)/.test(s)) return () => { setPanelOpen(p, false); return nm + " 탭을 숨겼어요."; };
-  if (p && /(보여|열|펼|표시|show|켜)/.test(s)) return () => { setPanelOpen(p, true); return nm + " 탭을 열었어요."; };
+  if (/(숨겨|숨기|숨김|닫아|닫기|접어|접기|최소화|감춰|꺼줘|끄기|hide)/.test(c)) return () => { setPanelOpen(p, false); return nm + " 탭을 숨겼어요."; };
+  if (/(보여|보이|열어|열기|펼쳐|펼치|표시|켜줘|show)/.test(c)) return () => { setPanelOpen(p, true); return nm + " 탭을 열었어요."; };
   return null;
 }
 function buildChatTeach() {                         // in-context 학습: 실제 그래프 어휘 + few-shot

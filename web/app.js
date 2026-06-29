@@ -125,10 +125,37 @@ function highlightInGraph(ids) {
 function classify(s) { if (/^\s*select\b/i.test(s)) return "sql"; return CMDS.includes(s.trim().split(/\s+/)[0]) ? "cmd" : "text"; }
 function flag(t, n, d) { const i = t.indexOf(n); return i >= 0 && t[i + 1] ? t[i + 1] : d; }
 function adjSQL(dir) { const o = "SELECT source a,target b FROM edges", i = "SELECT target a,source b FROM edges"; return dir === "out" ? o : dir === "in" ? i : `${o} UNION ${i}`; }
+function textIds(q) {                               // 텍스트 검색 id (렌더 없음)
+  if (!q || !q.trim()) return [];
+  const like = "%" + q.trim().toLowerCase() + "%";
+  return rows(`SELECT id FROM nodes WHERE lower(id) LIKE ? OR lower(title) LIKE ? OR lower(summary) LIKE ? OR lower(tags) LIKE ? OR lower(body) LIKE ?`, [like, like, like, like, like]).map((r) => r.id);
+}
+function keywordIds(q) {                            // 질문 단어 OR 검색 id (렌더 없음)
+  const toks = [];
+  for (const r of (q || "").split(/[^0-9A-Za-z가-힣]+/)) for (const p of (r.match(/[A-Za-z0-9]+|[가-힣]+/g) || [])) if (p.length >= 2 && !toks.includes(p)) toks.push(p);
+  if (!toks.length) return [];
+  toks.splice(8);
+  const conds = [], params = [];
+  for (const w of toks) { const lk = "%" + w.toLowerCase() + "%"; ["id", "title", "summary", "tags", "body"].forEach((c) => { conds.push(`lower(${c}) LIKE ?`); params.push(lk); }); }
+  return rows(`SELECT id FROM nodes WHERE ${conds.join(" OR ")}`, params).map((r) => r.id);
+}
+function retrieve(input) {                          // 채팅용 조용한 조회(UI 안 건드림)
+  const s = (input || "").trim(); if (!s) return [];
+  if (/^\s*select\b/i.test(s)) { try { const r = rows(s), set = new Set(allNodes.map((n) => n.id)), out = []; for (const row of r) for (const v of Object.values(row)) if (typeof v === "string" && set.has(v) && !out.includes(v)) out.push(v); return out; } catch (e) { return []; } }
+  const t = s.split(/\s+/), cmd = t[0], arg = t[1];
+  try {
+    if (cmd === "search") return textIds(t.slice(1).join(" "));
+    if (cmd === "node") return allNodes.some((n) => n.id === arg) ? [arg] : [];
+    if (cmd === "neighbors") { const depth = +flag(t, "--depth", 1), dir = flag(t, "--direction", "both"); return rows(`WITH RECURSIVE adj(a,b) AS (${adjSQL(dir)}), walk(id,dist) AS (SELECT ?,0 UNION SELECT adj.b,walk.dist+1 FROM adj JOIN walk ON adj.a=walk.id WHERE walk.dist<?) SELECT id FROM walk WHERE id<>? GROUP BY id`, [arg, depth, arg]).map((x) => x.id); }
+    if (cmd === "path") { const dst = t[2], dir = flag(t, "--direction", "both"); const row = rows(`WITH RECURSIVE adj(a,b) AS (${adjSQL(dir)}), walk(id,path,depth) AS (SELECT ?, '>'||?||'>',0 UNION ALL SELECT adj.b, walk.path||adj.b||'>', walk.depth+1 FROM adj JOIN walk ON adj.a=walk.id WHERE walk.depth<64 AND instr(walk.path,'>'||adj.b||'>')=0) SELECT path FROM walk WHERE id=? ORDER BY depth LIMIT 1`, [arg, arg, dst])[0]; return row ? row.path.split(">").filter(Boolean) : []; }
+    if (cmd === "degree") return rows(`SELECT id,(SELECT COUNT(*) FROM edges WHERE source=n.id OR target=n.id) deg FROM nodes n ORDER BY deg DESC,id LIMIT ?`, [+flag(t, "--top", 10)]).map((x) => x.id);
+    if (cmd === "orphans") return rows(`SELECT id FROM nodes WHERE id NOT IN (SELECT source FROM edges) AND id NOT IN (SELECT target FROM edges)`).map((x) => x.id);
+  } catch (e) { return []; }
+  return textIds(s);                               // 일반어 → 텍스트 검색
+}
 function runText(q) {
   if (!q.trim()) { renderList(null); highlightInGraph([]); note(`노드 ${allNodes.length}`); return; }
-  const like = "%" + q.trim().toLowerCase() + "%";
-  const ids = rows(`SELECT id FROM nodes WHERE lower(id) LIKE ? OR lower(title) LIKE ? OR lower(summary) LIKE ? OR lower(tags) LIKE ? OR lower(body) LIKE ?`, [like, like, like, like, like]).map((r) => r.id);
+  const ids = textIds(q);
   renderList(new Set(ids)); highlightInGraph(ids); note(`텍스트 '${q.trim()}': ${ids.length}건`);
 }
 function runSQL(s) {
@@ -206,14 +233,8 @@ function runSuggest(id) {
   out.sort((a, b) => b.sc - a.sc); const ids = out.map((x) => x.id);
   renderOrdered(ids); highlightInGraph([id, ...ids]); note(`${id} 연결 후보 ${ids.length}`);
 }
-function searchKeywords(q) {                        // 질문에서 단어 뽑아 OR 검색(0건 폴백용)
-  const toks = [];                                  // 영문/한글 경계로 분리 ("CTE가"→["CTE"])
-  for (const r of (q || "").split(/[^0-9A-Za-z가-힣]+/)) for (const p of (r.match(/[A-Za-z0-9]+|[가-힣]+/g) || [])) if (p.length >= 2 && !toks.includes(p)) toks.push(p);
-  if (!toks.length) { runText(q); return; }
-  toks.splice(8);
-  const conds = [], params = [];
-  for (const w of toks) { const lk = "%" + w.toLowerCase() + "%"; ["id", "title", "summary", "tags", "body"].forEach((c) => { conds.push(`lower(${c}) LIKE ?`); params.push(lk); }); }
-  const ids = rows(`SELECT id FROM nodes WHERE ${conds.join(" OR ")}`, params).map((r) => r.id);
+function searchKeywords(q) {                        // 검색창용 키워드 검색(렌더)
+  const ids = keywordIds(q);
   renderList(new Set(ids)); highlightInGraph(ids); note(`키워드 검색: ${ids.length}건`);
 }
 function runQuery(input) {
@@ -364,27 +385,29 @@ async function chatAsk(q) {
   const ui = uiIntent(q);                          // "문서 탭 숨겨줘", "상하로 해줘" 등
   if (ui) { bubble("sys", "🪟 " + ui()); return; }
   const engine = await ensureLLM();
-  if (!engine) { runQuery(q); bubble("bot", `AI 없이 텍스트 검색으로 대신 찾았어요. 좌측 목록 확인(${lastIds.length}건).`); return; }
+  if (!engine) { bubble("sys", "브라우저 AI가 없어 자연어 답변을 못 만들어요. 검색은 검색창이나 `~~ <검색식>`을 써주세요."); return; }
   const thinking = bubble("bot", "…");
   const hist = chatHistory.slice(-6);   // 최근 대화 맥락(후속 질문 해석용)
   try {
     const { sys: sys1, fewshot } = buildChatTeach();   // 실제 그래프 어휘 + 예시 주입
     const r1 = await engine.chat.completions.create({ messages: [{ role: "system", content: sys1 }, ...fewshot, ...hist, { role: "user", content: q }], temperature: 0 });
-    let query = (r1.choices[0].message.content || "").trim().split("\n")[0].replace(/^`+|`+$/g, "").trim();
-    $("q").value = query; runQuery(query);          // 검색창에도 반영 + 화면(목록·그래프) 갱신
-    if (!lastIds.length) { searchKeywords(q); query = "(키워드) " + query; }   // 0건이면 질문 키워드로 재검색
-    const found = lastIds.slice(0, 8);
+    const query = (r1.choices[0].message.content || "").trim().split("\n")[0].replace(/^`+|`+$/g, "").trim();
+    let ids = retrieve(query);                       // 내부 조회만 (검색창·목록·그래프 안 건드림)
+    if (!ids.length) ids = keywordIds(q);            // 0건이면 질문 키워드로 재시도
+    const found = ids.slice(0, 8);
     if (!found.length) {                              // 진짜 결과 없으면 환각 대신 솔직히
-      const msg = "관련 노드를 찾지 못했어요. 다른 키워드로 묻거나, 검색창에 직접 입력해 보세요.";
+      const msg = "그래프에서 관련 노드를 찾지 못했어요. 다르게 물어봐 주세요.";
       chatHistory.push({ role: "user", content: q }, { role: "assistant", content: msg });
       thinking.innerHTML = esc(msg) + `<br><span style="opacity:.6;font-size:12px">↳ ${esc(query)} · 0건</span>`; return;
     }
-    const ctx = found.map((id) => { const n = rows("SELECT title,type,summary FROM nodes WHERE id=?", [id])[0] || {}; return `- ${id}: ${n.title || ""} (${n.type || ""}) ${n.summary || ""}`; }).join("\n");
-    const sys2 = `너는 지식그래프 비서다. 아래 '검색 결과'에 있는 내용만 근거로 한국어로 2~4문장 답하라. 결과에 없는 사실은 절대 지어내지 마라.\n질의: ${query}\n검색 결과:\n${ctx}`;
-    const r2 = await engine.chat.completions.create({ messages: [{ role: "system", content: sys2 }, ...hist, { role: "user", content: q }], temperature: 0.2 });
+    const ctx = found.map((id) => { const n = rows("SELECT title,type,summary,body FROM nodes WHERE id=?", [id])[0] || {}; return `## ${n.title || id} (${n.type || ""})\n요약: ${n.summary || "-"}\n내용: ${(n.body || "-").slice(0, 400)}`; }).join("\n\n");
+    const sys2 = `너는 이 지식그래프 전용 비서다. 아래 '노드 내용'에 적힌 사실만으로 한국어 2~4문장으로 답하라.
+금지: 일반 상식·사전적 정의·외부 지식(예: 약자 풀이)·노드에 없는 내용 추가. 노드에 답이 없으면 정확히 "그래프에 그 정보가 없어요"라고만 답하라.
+노드 내용:\n${ctx}`;
+    const r2 = await engine.chat.completions.create({ messages: [{ role: "system", content: sys2 }, { role: "user", content: q }], temperature: 0 });
     const ans = (r2.choices[0].message.content || "").trim();
     chatHistory.push({ role: "user", content: q }, { role: "assistant", content: ans });   // 메모리 누적
-    thinking.innerHTML = esc(ans) + `<br><span style="opacity:.6;font-size:12px">↳ ${esc(query)} · ${lastIds.length}건</span>`;
+    thinking.innerHTML = esc(ans) + `<br><span style="opacity:.6;font-size:12px">↳ ${esc(query)} · ${found.length}건 (내부검색)</span>`;
   } catch (e) { thinking.textContent = "오류: " + e.message; }
 }
 

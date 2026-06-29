@@ -5,9 +5,11 @@ body { display: flex; flex-direction: column; height: 100vh; color: #1c2230; }
 header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid #e4e7ee; flex-wrap: wrap; }
 header h1 { font-size: 18px; margin: 0; }
 .stats { color: #6b7280; font-size: 13px; }
-.layout { margin-left: auto; border: 1px solid #cbd2dd; background: #fff; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; color: #374151; }
-.layout:hover { background: #f4f6fa; }
-#q { width: 280px; max-width: 40vw; padding: 7px 11px; border: 1px solid #cbd2dd; border-radius: 8px; font-size: 14px; }
+.hbtn { border: 1px solid #cbd2dd; background: #fff; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; color: #374151; }
+.hbtn:first-of-type { margin-left: auto; }
+.hbtn:hover { background: #f4f6fa; }
+#q { width: 320px; max-width: 42vw; padding: 7px 11px; border: 1px solid #cbd2dd; border-radius: 8px; font-size: 14px; }
+.hint { font-size: 11px; color: #9aa3b2; border: 1px solid #e4e7ee; border-radius: 5px; padding: 0 5px; }
 
 main { display: flex; flex: 1; min-height: 0; }
 .sidebar { width: 260px; border-right: 1px solid #e4e7ee; overflow: auto; background: #fbfcfe; }
@@ -51,3 +53,28 @@ main { display: flex; flex: 1; min-height: 0; }
 
 #cy { background: #f7f8fb; }
 footer { padding: 7px 16px; border-top: 1px solid #e4e7ee; color: #6b7280; font-size: 12px; }
+
+/* 채팅 패널 */
+.chatbody { display: flex; flex-direction: column; }
+.chatlog { flex: 1; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.bubble { max-width: 80%; padding: 9px 13px; border-radius: 12px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
+.bubble.user { align-self: flex-end; background: #1c2230; color: #fff; }
+.bubble.bot { align-self: flex-start; background: #f0f2f6; color: #1c2230; }
+.bubble.sys { align-self: center; background: #fff7ed; color: #9a6700; font-size: 12px; border: 1px solid #fde6c8; }
+.bubble a { color: inherit; border-bottom: 1px dashed currentColor; cursor: pointer; }
+.chatform { display: flex; gap: 8px; padding: 10px; border-top: 1px solid #e4e7ee; }
+.chatform input { flex: 1; padding: 8px 11px; border: 1px solid #cbd2dd; border-radius: 8px; font-size: 14px; }
+.chatform button { padding: 8px 14px; border: none; border-radius: 8px; background: #1c2230; color: #fff; cursor: pointer; }
+
+/* 사용법 모달 */
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal.hidden { display: none; }
+.modalbox { background: #fff; border-radius: 12px; padding: 24px 28px; max-width: 920px; width: 92vw; max-height: 86vh; overflow: auto; position: relative; }
+.modalbox h2 { margin: 0 0 6px; font-size: 20px; }
+.hmsg { color: #6b7280; font-size: 13px; margin: 0 0 14px; }
+.modalclose { position: absolute; top: 12px; right: 16px; border: none; background: none; font-size: 24px; cursor: pointer; color: #9aa3b2; }
+#helpTable { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+#helpTable th, #helpTable td { border: 1px solid #e4e7ee; padding: 7px 10px; text-align: left; vertical-align: top; }
+#helpTable th { background: #f4f6fa; }
+#helpTable code { background: #f4f6fa; padding: 1px 5px; border-radius: 4px; cursor: pointer; }
+#helpTable code:hover { background: #e4e7ee; }

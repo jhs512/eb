@@ -9,12 +9,14 @@
 - 좌측 목록·검색으로 노드 이동. 그래프에선 **현재 노드가 주황 테두리로 강조**된다.
 - 헤더의 **`⬍ 상하 / ⬌ 좌우`** 버튼으로 분할 방향 전환.
 - 패널 접힘·분할 방향·크기·선택 노드는 **`localStorage`에 기억**되어 새로고침해도 유지된다.
-- **스마트 검색창**(전부 sql.js, 입력을 자동 감지):
-  - **텍스트** — `분산락` 처럼 입력 → 부분일치(라이브).
-  - **eb 명령** — `neighbors redis --depth 2 --direction both`, `path a b`, `degree --top 5`, `suggest id`, `orphans` (Enter). eb.py와 동일 결과.
-  - **원시 SQL** — `SELECT id,title FROM nodes WHERE type='decision' AND confidence<0.7` (Enter). `id` 컬럼을 결과로.
-  - 결과는 좌측 목록 + 그래프에서 강조(나머지는 흐리게).
-- **🤖 AI(선택, WebLLM·CDN)** — 켜면 자연어 질문(예: "redis와 동시성이 어떻게 엮이지?")을 LLM이 위 질의로 변환해 실행. WebGPU 미지원/실패 시 텍스트 검색으로 폴백(키·서버 불필요, 모델은 첫 사용 시 브라우저로 다운로드).
+- **스마트 검색창**(전부 sql.js, 입력 자동 감지 — **그냥 단어만 쳐도 검색**):
+  - **텍스트** — `분산락` → 부분일치(라이브).
+  - **eb 명령** — `neighbors id --depth 2 --direction both`, `path a b`, `node id`, `degree --top 5`, `suggest id`, `health --confidence 0.6`, `orphans` (Enter). eb.py와 동일 결과.
+  - **원시 SQL** — `SELECT … FROM nodes WHERE type='decision' AND confidence<0.7` (Enter). 결과의 어느 컬럼이든 노드 id면 인식(예: `contradicts` 엣지의 source/target).
+  - 결과는 좌측 목록 + 그래프에서 강조.
+  - 헤더 **`? 사용법`**(또는 `?` 키)에 표현식 10개 치트시트 — 클릭하면 검색창에 채워짐.
+- **세 패널: 📄문서 / 🕸그래프 / 💬채팅** — 각 헤더 클릭 또는 **`Alt+1/2/3`** 로 접기·펼치기. 상하/좌우 분할 토글, 드래그 크기조절, 상태 기억.
+- **💬 채팅 탭(WebLLM, 선택)** — 자연어로 물으면(예: "redis와 동시성이 어떻게 엮이지?") LLM이 그래프 질의(path/neighbors/SQL)로 변환→sql.js 실행→**검색 결과만 근거로** 한국어 답. 화면(목록·그래프)도 그 질의로 갱신. WebGPU 미지원 시 텍스트 검색으로 폴백(키·서버 불필요, 모델은 첫 사용 시 브라우저 다운로드).
 
 ## 로컬 미리보기
 저장소 루트에서 서버를 띄우고 `/web/`을 연다(앱이 `./data/` 실패 시 `../data/`로 폴백 → 복사 불필요):

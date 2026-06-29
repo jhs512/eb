@@ -1,12 +1,13 @@
 /* Excel Brain 지식 뷰어 — 전부 클라이언트 사이드(sql.js).
-   검색창: 텍스트 / eb 명령(neighbors·path…) / 원시 SQL 자동 감지. WebLLM(선택)이 켜지면
-   자연어 → 질의로 변환해 실행, 안 되면 텍스트 검색으로 폴백.
-   패널(문서/그래프): 상하·좌우 분할, 접기·드래그, 현재 노드 하이라이트, 상태 기억. */
+   검색창: 그냥 단어=텍스트검색, neighbors/path/node/degree/suggest/health/orphans 명령,
+   원시 SELECT SQL 자동 감지. 채팅 탭: 자연어→그래프 탐색(WebLLM, 선택).
+   패널(문서/그래프/채팅): 상하·좌우 분할, 접기(헤더 클릭·Alt+1/2/3), 드래그 크기조절, 상태 기억. */
 "use strict";
 
 const DATA_BASES = ["./data/", "../data/"];
-const LS_KEY = "eb-view-state-v1";
-const CMDS = ["search", "neighbors", "path", "degree", "suggest", "orphans", "components"];
+const LS_KEY = "eb-view-state-v2";
+const PANELS = ["docPanel", "graphPanel", "chatPanel"];
+const CMDS = ["search", "neighbors", "path", "node", "degree", "suggest", "health", "orphans", "components"];
 const TYPE_COLORS = { pillar: "#7c3aed", concept: "#2563eb", fact: "#059669",
   decision: "#d97706", question: "#dc2626", playbook: "#0891b2", source: "#6b7280", note: "#94a3b8" };
 const colorFor = (t) => TYPE_COLORS[t] || "#64748b";
@@ -14,32 +15,40 @@ const esc = (s) => (s == null ? "" : String(s).replace(/[&<>]/g, (c) => ({ "&": 
 const $ = (id) => document.getElementById(id);
 
 let db = null, cy = null, current = null, allNodes = [], rawNodes = [], rawEdges = [];
-let ratio = 0.55, llm = null, aiOn = false;
+let grows = { docPanel: 1, graphPanel: 1, chatPanel: 1 }, lastIds = [];
+let llm = null, llmTried = false;
+
+const HELP = [
+  ["'분산락' 관련 노트 다 찾아", "분산락", "제목·요약·태그·본문 부분일치(랭크)"],
+  ["바로 연결된 것", "neighbors redis --depth 1", "직접 이웃(1홉)"],
+  ["주변 지형 넓게", "neighbors redis --depth 2 --direction both", "2홉 이내(거리별) — 맥락"],
+  ["A와 B가 어떻게 엮이지?", "path redis 동시성-제어", "둘을 잇는 최단 경로"],
+  ["무엇이 이걸 참조/지지하나", "node redis", "상세 + 백링크(들어오는 엣지)"],
+  ["핵심 허브", "degree --top 5", "연결 많은 중심 노드"],
+  ["이어질 만한데 안 이어진 것", "suggest redis", "공통 이웃·태그 추천 후보"],
+  ["근거 약한(신뢰도 낮은) 노드", "health --confidence 0.6", "저신뢰·미상 노드"],
+  ["재검토할 결정들(타입+속성)", "SELECT id,title FROM nodes WHERE type='decision' AND confidence<0.7", "신뢰도 낮은 decision"],
+  ["서로 모순되는 지식 쌍", "SELECT source,target FROM edges WHERE type='contradicts'", "contradicts 노드 쌍"],
+];
 
 /* ---- 로드/DB ---- */
 async function fetchCSV(name) {
   for (const base of DATA_BASES) {
     try { const r = await fetch(base + name); if (r.ok) return Papa.parse(await r.text(), { header: true, skipEmptyLines: true }).data; }
-    catch (e) { /* 다음 경로 */ }
+    catch (e) {}
   }
   throw new Error(`${name} 로드 실패 — data/ (또는 ../data/)에 CSV가 있어야 합니다`);
 }
-function rows(sql, params = []) {
-  const out = [], st = db.prepare(sql);
-  st.bind(params); while (st.step()) out.push(st.getAsObject()); st.free();
-  return out;
-}
+function rows(sql, params = []) { const out = [], st = db.prepare(sql); st.bind(params); while (st.step()) out.push(st.getAsObject()); st.free(); return out; }
 function buildDb(SQL, nodes, edges) {
   const d = new SQL.Database();
   d.run(`CREATE TABLE nodes(id TEXT PRIMARY KEY, title, type, namespace, visibility, summary, confidence REAL, tags, body);
          CREATE TABLE edges(source, type, target, weight REAL, note);`);
   const ni = d.prepare("INSERT OR REPLACE INTO nodes VALUES (?,?,?,?,?,?,?,?,?)");
-  for (const n of nodes) if ((n.id || "").trim())
-    ni.run([n.id.trim(), n.title, n.type, n.namespace, n.visibility, n.summary, n.confidence ? +n.confidence : null, n.tags, n.body]);
+  for (const n of nodes) if ((n.id || "").trim()) ni.run([n.id.trim(), n.title, n.type, n.namespace, n.visibility, n.summary, n.confidence ? +n.confidence : null, n.tags, n.body]);
   ni.free();
   const ei = d.prepare("INSERT INTO edges VALUES (?,?,?,?,?)");
-  for (const e of edges) if ((e.source || "").trim() && (e.target || "").trim())
-    ei.run([e.source.trim(), e.type, e.target.trim(), e.weight ? +e.weight : null, e.note]);
+  for (const e of edges) if ((e.source || "").trim() && (e.target || "").trim()) ei.run([e.source.trim(), e.type, e.target.trim(), e.weight ? +e.weight : null, e.note]);
   ei.free();
   return d;
 }
@@ -47,33 +56,32 @@ function buildDb(SQL, nodes, edges) {
 /* ---- 상태 기억 ---- */
 function saveState() {
   try { localStorage.setItem(LS_KEY, JSON.stringify({
-    docCollapsed: $("docPanel").classList.contains("collapsed"),
-    graphCollapsed: $("graphPanel").classList.contains("collapsed"),
-    horizontal: $("center").classList.contains("horizontal"), ratio, current })); } catch (e) {}
+    collapsed: Object.fromEntries(PANELS.map((p) => [p, $(p).classList.contains("collapsed")])),
+    horizontal: $("center").classList.contains("horizontal"), grows, current })); } catch (e) {}
 }
 function loadState() { try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch (e) { return {}; } }
 
 /* ---- 목록 + 원문 ---- */
-function note(msg) { $("stats").textContent = msg; }
+function note(m) { $("stats").textContent = m; }
 function liHtml(n) { return `<li data-id="${esc(n.id)}" class="${n.id === current ? "sel" : ""}">${esc(n.title || n.id)}<br><span class="t">${esc(n.type || "")}</span></li>`; }
 function bindList() { $("list").querySelectorAll("li[data-id]").forEach((li) => li.addEventListener("click", () => select(li.dataset.id))); }
 function renderList(filterIds) {
   const items = allNodes.filter((n) => !filterIds || filterIds.has(n.id));
-  $("list").innerHTML = items.length ? items.map(liHtml).join("") : '<li class="empty">결과 없음</li>';
-  bindList();
+  lastIds = items.map((n) => n.id);
+  $("list").innerHTML = items.length ? items.map(liHtml).join("") : '<li class="empty">결과 없음</li>'; bindList();
 }
 function renderOrdered(ids) {
+  lastIds = ids.slice();
   const byId = Object.fromEntries(allNodes.map((n) => [n.id, n]));
-  $("list").innerHTML = ids.length ? ids.map((id) => liHtml(byId[id] || { id })).join("") : '<li class="empty">결과 없음</li>';
-  bindList();
+  $("list").innerHTML = ids.length ? ids.map((id) => liHtml(byId[id] || { id })).join("") : '<li class="empty">결과 없음</li>'; bindList();
 }
 function renderDoc(id) {
-  const n = rows("SELECT * FROM nodes WHERE id = ?", [id])[0], doc = $("doc");
+  const n = rows("SELECT * FROM nodes WHERE id=?", [id])[0], doc = $("doc");
   if (!n) { doc.innerHTML = '<p class="placeholder">노드를 선택하세요.</p>'; return; }
-  const out = rows("SELECT type, target FROM edges WHERE source=? ORDER BY target", [id]);
-  const inc = rows("SELECT type, source FROM edges WHERE target=? ORDER BY source", [id]);
-  const link = (nid) => `<a data-id="${esc(nid)}">${esc(nid)}</a>`;
-  const el = (arr, d) => arr.length ? arr.map((e) => `<li><span class="etype">${esc(e.type)}</span> ${d === "out" ? "→ " + link(e.target) : link(e.source) + " →"}</li>`).join("") : '<li class="placeholder">(없음)</li>';
+  const out = rows("SELECT type,target FROM edges WHERE source=? ORDER BY target", [id]);
+  const inc = rows("SELECT type,source FROM edges WHERE target=? ORDER BY source", [id]);
+  const link = (x) => `<a data-id="${esc(x)}">${esc(x)}</a>`;
+  const el = (a, d) => a.length ? a.map((e) => `<li><span class="etype">${esc(e.type)}</span> ${d === "out" ? "→ " + link(e.target) : link(e.source) + " →"}</li>`).join("") : '<li class="placeholder">(없음)</li>';
   doc.innerHTML = `<h2>${esc(n.title || n.id)}</h2>
      <div class="meta"><span class="badge" style="background:${colorFor(n.type)}">${esc(n.type || "?")}</span>
        <code>${esc(n.id)}</code>${n.namespace ? " · " + esc(n.namespace) : ""} · 신뢰도 ${n.confidence ?? "-"}${n.tags ? " · " + esc(n.tags) : ""}</div>
@@ -95,32 +103,19 @@ function select(id) {
   document.querySelectorAll("#list li").forEach((li) => li.classList.toggle("sel", li.dataset.id === id));
   markCurrent(); saveState();
 }
-
-/* ---- 그래프 강조(쿼리 결과) ---- */
 function highlightInGraph(ids) {
-  if (!cy) return;
-  const set = new Set(ids);
-  cy.batch(() => {
-    cy.elements().removeClass("dim qhit");
-    if (!ids.length) return;
+  if (!cy) return; const set = new Set(ids);
+  cy.batch(() => { cy.elements().removeClass("dim qhit"); if (!ids.length) return;
     cy.nodes().forEach((n) => set.has(n.id()) ? n.addClass("qhit") : n.addClass("dim"));
-    cy.edges().forEach((e) => { if (!(set.has(e.source().id()) && set.has(e.target().id()))) e.addClass("dim"); });
-  });
+    cy.edges().forEach((e) => { if (!(set.has(e.source().id()) && set.has(e.target().id()))) e.addClass("dim"); }); });
 }
 
-/* ---- 검색 디스패처: 텍스트 / 명령 / SQL ---- */
-function classify(s) {
-  if (/^\s*select\b/i.test(s)) return "sql";
-  if (CMDS.includes(s.trim().split(/\s+/)[0])) return "cmd";
-  return "text";
-}
-function flag(toks, name, def) { const i = toks.indexOf(name); return i >= 0 && toks[i + 1] ? toks[i + 1] : def; }
-function adjSQL(dir) {
-  const o = "SELECT source a, target b FROM edges", i = "SELECT target a, source b FROM edges";
-  return dir === "out" ? o : dir === "in" ? i : `${o} UNION ${i}`;
-}
+/* ---- 검색 디스패처 ---- */
+function classify(s) { if (/^\s*select\b/i.test(s)) return "sql"; return CMDS.includes(s.trim().split(/\s+/)[0]) ? "cmd" : "text"; }
+function flag(t, n, d) { const i = t.indexOf(n); return i >= 0 && t[i + 1] ? t[i + 1] : d; }
+function adjSQL(dir) { const o = "SELECT source a,target b FROM edges", i = "SELECT target a,source b FROM edges"; return dir === "out" ? o : dir === "in" ? i : `${o} UNION ${i}`; }
 function runText(q) {
-  if (!q.trim()) { renderList(null); highlightInGraph([]); return; }
+  if (!q.trim()) { renderList(null); highlightInGraph([]); note(`노드 ${allNodes.length}`); return; }
   const like = "%" + q.trim().toLowerCase() + "%";
   const ids = rows(`SELECT id FROM nodes WHERE lower(title) LIKE ? OR lower(summary) LIKE ? OR lower(tags) LIKE ? OR lower(body) LIKE ?`, [like, like, like, like]).map((r) => r.id);
   renderList(new Set(ids)); highlightInGraph(ids); note(`텍스트 '${q.trim()}': ${ids.length}건`);
@@ -129,108 +124,75 @@ function runSQL(s) {
   try {
     const r = rows(s);
     if (!r.length) { renderList(new Set()); highlightInGraph([]); note("SQL: 0행"); return; }
-    if (!("id" in r[0])) { note(`SQL: ${r.length}행 (id 컬럼 없음 — id를 SELECT 하세요)`); return; }
-    const ids = r.map((x) => x.id); renderOrdered(ids); highlightInGraph(ids); note(`SQL: ${ids.length}행`);
+    const idset = new Set(allNodes.map((n) => n.id)), seen = [], out = new Set();
+    for (const row of r) for (const v of Object.values(row)) if (typeof v === "string" && idset.has(v) && !out.has(v)) { out.add(v); seen.push(v); }
+    if (!seen.length) { note(`SQL: ${r.length}행 (노드 id 없음)`); return; }
+    renderOrdered(seen); highlightInGraph(seen); note(`SQL: ${r.length}행 · 노드 ${seen.length}`);
   } catch (e) { note("SQL 오류: " + e.message); }
 }
 function runCmd(s) {
-  const toks = s.trim().split(/\s+/), cmd = toks[0], arg = toks[1];
+  const t = s.trim().split(/\s+/), cmd = t[0], arg = t[1];
   try {
-    if (cmd === "search") return runText(toks.slice(1).join(" "));
+    if (cmd === "search") return runText(t.slice(1).join(" "));
+    if (cmd === "node") { if (allNodes.some((n) => n.id === arg)) { select(arg); renderOrdered([arg]); highlightInGraph([arg]); note("노드: " + arg); } else note("없는 노드: " + arg); return; }
     if (cmd === "neighbors") {
-      const depth = +flag(toks, "--depth", 1), dir = flag(toks, "--direction", "both");
-      const r = rows(`WITH RECURSIVE adj(a,b) AS (${adjSQL(dir)}), walk(id,dist) AS (
-        SELECT ?,0 UNION SELECT adj.b, walk.dist+1 FROM adj JOIN walk ON adj.a=walk.id WHERE walk.dist<?)
-        SELECT id, MIN(dist) dist FROM walk WHERE id<>? GROUP BY id ORDER BY dist, id`, [arg, depth, arg]);
-      const ids = r.map((x) => x.id); renderOrdered(ids); highlightInGraph([arg, ...ids]); note(`${arg} 이웃 ${depth}홉(${dir}): ${ids.length}개`); return;
+      const depth = +flag(t, "--depth", 1), dir = flag(t, "--direction", "both");
+      const ids = rows(`WITH RECURSIVE adj(a,b) AS (${adjSQL(dir)}), walk(id,dist) AS (
+        SELECT ?,0 UNION SELECT adj.b,walk.dist+1 FROM adj JOIN walk ON adj.a=walk.id WHERE walk.dist<?)
+        SELECT id,MIN(dist) dist FROM walk WHERE id<>? GROUP BY id ORDER BY dist,id`, [arg, depth, arg]).map((x) => x.id);
+      renderOrdered(ids); highlightInGraph([arg, ...ids]); note(`${arg} 이웃 ${depth}홉(${dir}): ${ids.length}개`); return;
     }
     if (cmd === "path") {
-      const dst = toks[2], dir = flag(toks, "--direction", "both");
+      const dst = t[2], dir = flag(t, "--direction", "both");
       const row = rows(`WITH RECURSIVE adj(a,b) AS (${adjSQL(dir)}), walk(id,path,depth) AS (
-        SELECT ?, '>'||?||'>', 0 UNION ALL SELECT adj.b, walk.path||adj.b||'>', walk.depth+1
+        SELECT ?, '>'||?||'>',0 UNION ALL SELECT adj.b, walk.path||adj.b||'>', walk.depth+1
           FROM adj JOIN walk ON adj.a=walk.id WHERE walk.depth<64 AND instr(walk.path,'>'||adj.b||'>')=0)
-        SELECT path, depth FROM walk WHERE id=? ORDER BY depth LIMIT 1`, [arg, arg, dst])[0];
+        SELECT path,depth FROM walk WHERE id=? ORDER BY depth LIMIT 1`, [arg, arg, dst])[0];
       if (!row) { renderOrdered([]); note(`경로 없음: ${arg} → ${dst}`); return; }
-      const ids = row.path.split(">").filter(Boolean); renderOrdered(ids); highlightInGraph(ids);
-      note(`경로(홉 ${row.depth}): ${ids.join(" → ")}`); return;
+      const ids = row.path.split(">").filter(Boolean); renderOrdered(ids); highlightInGraph(ids); note(`경로(홉 ${row.depth}): ${ids.join(" → ")}`); return;
     }
     if (cmd === "degree") {
-      const top = +flag(toks, "--top", 10);
-      const ids = rows(`SELECT id, (SELECT COUNT(*) FROM edges WHERE source=n.id OR target=n.id) deg
-        FROM nodes n ORDER BY deg DESC, id LIMIT ?`, [top]).map((x) => x.id);
+      const top = +flag(t, "--top", 10);
+      const ids = rows(`SELECT id,(SELECT COUNT(*) FROM edges WHERE source=n.id OR target=n.id) deg FROM nodes n ORDER BY deg DESC,id LIMIT ?`, [top]).map((x) => x.id);
       renderOrdered(ids); highlightInGraph(ids); note(`허브 상위 ${ids.length}`); return;
+    }
+    if (cmd === "health") {
+      const thr = +flag(t, "--confidence", 0.6);
+      const ids = rows(`SELECT id FROM nodes WHERE confidence IS NULL OR confidence<? ORDER BY (confidence IS NOT NULL), confidence`, [thr]).map((x) => x.id);
+      renderOrdered(ids); highlightInGraph(ids); note(`저신뢰/미상 (<${thr}): ${ids.length}`); return;
     }
     if (cmd === "orphans") {
       const ids = rows(`SELECT id FROM nodes WHERE id NOT IN (SELECT source FROM edges) AND id NOT IN (SELECT target FROM edges) ORDER BY id`).map((x) => x.id);
       renderOrdered(ids); highlightInGraph(ids); note(`고아 ${ids.length}개`); return;
     }
-    if (cmd === "suggest") { runSuggest(arg); return; }
-    if (cmd === "components") {
-      const comps = components(); note(`연결 요소 ${comps.length}개 (최대 ${comps[0]?.length || 0})`); renderOrdered(comps[0] || []); highlightInGraph(comps[0] || []); return;
-    }
+    if (cmd === "suggest") return runSuggest(arg);
+    if (cmd === "components") { const c = comps(); renderOrdered(c[0] || []); highlightInGraph(c[0] || []); note(`연결 요소 ${c.length}개 (최대 ${c[0]?.length || 0})`); return; }
   } catch (e) { note("명령 오류: " + e.message); }
 }
-function components() {
-  const ids = allNodes.map((n) => n.id), parent = {}; ids.forEach((i) => parent[i] = i);
-  const find = (x) => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
-  rawEdges.forEach((e) => { const s = (e.source || "").trim(), t = (e.target || "").trim(); if (parent[s] && parent[t]) { const a = find(s), b = find(t); if (a !== b) parent[b] = a; } });
-  const g = {}; ids.forEach((i) => { const r = find(i); (g[r] = g[r] || []).push(i); });
+function comps() {
+  const ids = allNodes.map((n) => n.id), p = {}; ids.forEach((i) => p[i] = i);
+  const f = (x) => { while (p[x] !== x) { p[x] = p[p[x]]; x = p[x]; } return x; };
+  rawEdges.forEach((e) => { const s = (e.source || "").trim(), t = (e.target || "").trim(); if (p[s] && p[t]) { const a = f(s), b = f(t); if (a !== b) p[b] = a; } });
+  const g = {}; ids.forEach((i) => { (g[f(i)] = g[f(i)] || []).push(i); });
   return Object.values(g).sort((a, b) => b.length - a.length);
 }
 function runSuggest(id) {
-  const adj = {}, tags = {};
-  allNodes.forEach((n) => { adj[n.id] = new Set(); });
-  rawNodes.forEach((n) => { const i = (n.id || "").trim(); if (i) tags[i] = new Set(String(n.tags || "").split(";").map((x) => x.trim()).filter(Boolean)); });
+  const adj = {}, tg = {}; allNodes.forEach((n) => adj[n.id] = new Set());
+  rawNodes.forEach((n) => { const i = (n.id || "").trim(); if (i) tg[i] = new Set(String(n.tags || "").split(";").map((x) => x.trim()).filter(Boolean)); });
   rawEdges.forEach((e) => { const s = (e.source || "").trim(), t = (e.target || "").trim(); if (adj[s] && adj[t]) { adj[s].add(t); adj[t].add(s); } });
   if (!adj[id]) { note("없는 노드: " + id); return; }
-  const my = adj[id], myt = tags[id] || new Set(), out = [];
-  for (const n of allNodes) {
-    if (n.id === id || my.has(n.id)) continue;
+  const my = adj[id], myt = tg[id] || new Set(), out = [];
+  for (const n of allNodes) { if (n.id === id || my.has(n.id)) continue;
     let common = 0; my.forEach((x) => { if (adj[n.id].has(x)) common++; });
-    const ct = tags[n.id] || new Set(), uni = new Set([...myt, ...ct]); let inter = 0; myt.forEach((x) => { if (ct.has(x)) inter++; });
-    const jac = uni.size ? inter / uni.size : 0, score = common + jac;
-    if (score > 0) out.push({ id: n.id, score });
-  }
-  out.sort((a, b) => b.score - a.score);
-  const ids = out.map((x) => x.id); renderOrdered(ids); highlightInGraph([id, ...ids]); note(`${id} 연결 후보 ${ids.length}`);
+    const ct = tg[n.id] || new Set(), uni = new Set([...myt, ...ct]); let it = 0; myt.forEach((x) => { if (ct.has(x)) it++; });
+    const sc = common + (uni.size ? it / uni.size : 0); if (sc > 0) out.push({ id: n.id, sc }); }
+  out.sort((a, b) => b.sc - a.sc); const ids = out.map((x) => x.id);
+  renderOrdered(ids); highlightInGraph([id, ...ids]); note(`${id} 연결 후보 ${ids.length}`);
 }
-
-function runQuery(input, fromEnter) {
+function runQuery(input) {
   const s = (input || "").trim();
-  if (!s) { renderList(null); highlightInGraph([]); note(`노드 ${allNodes.length}`); return; }
-  const kind = classify(s);
-  if (aiOn && fromEnter && kind === "text") return runAI(s);
-  if (kind === "sql") return runSQL(s);
-  if (kind === "cmd") return runCmd(s);
-  return runText(s);
-}
-
-/* ---- WebLLM (선택, CDN, 자연어 → 질의) ---- */
-async function enableAI() {
-  $("ai").textContent = "🤖 로딩…";
-  try {
-    const webllm = await import("https://esm.run/@mlc-ai/web-llm");
-    llm = await webllm.CreateMLCEngine("Qwen2.5-0.5B-Instruct-q4f16_1-MLC",
-      { initProgressCallback: (p) => { $("ai").textContent = "🤖 " + Math.round((p.progress || 0) * 100) + "%"; } });
-    aiOn = true; $("ai").textContent = "🤖 AI 켜짐";
-  } catch (e) { aiOn = false; llm = null; $("ai").textContent = "🤖 AI(미지원)"; alert("WebLLM 사용 불가: " + e.message + "\n텍스트·SQL 검색을 쓰세요."); }
-}
-async function runAI(q) {
-  if (!llm) return runText(q);
-  note("🤖 생각 중…");
-  const list = allNodes.slice(0, 300).map((n) => `${n.id} | ${n.title} | ${n.type}`).join("\n");
-  const sys = `너는 지식그래프 질의 변환기다. 사용자의 한국어 질문을 아래 중 정확히 한 줄로만 출력한다(설명·코드블록 금지).
-- 텍스트: search <키워드>
-- 이웃:   neighbors <노드id> --depth <N> --direction both
-- 경로:   path <노드id> <노드id>
-- SQL:    SELECT id,title FROM nodes WHERE ...
-스키마: nodes(id,title,type,namespace,visibility,summary,confidence REAL,tags,body), edges(source,type,target,weight,note). id는 kebab-case.
-노드 목록(id | title | type):\n${list}`;
-  try {
-    const r = await llm.chat.completions.create({ messages: [{ role: "system", content: sys }, { role: "user", content: q }], temperature: 0 });
-    const line = (r.choices[0].message.content || "").trim().split("\n")[0].replace(/^`+|`+$/g, "").trim();
-    $("q").value = line; runQuery(line, false); note("🤖 → " + line);
-  } catch (e) { note("AI 오류 — 텍스트로"); runText(q); }
+  if (!s) { runText(""); return; }
+  const k = classify(s); if (k === "sql") return runSQL(s); if (k === "cmd") return runCmd(s); return runText(s);
 }
 
 /* ---- 그래프(lazy) ---- */
@@ -249,59 +211,131 @@ function buildGraph() {
   markCurrent();
 }
 
-/* ---- 패널 ---- */
-function bothExpanded() { return !$("docPanel").classList.contains("collapsed") && !$("graphPanel").classList.contains("collapsed"); }
-function setSplit(r) { ratio = Math.max(0.15, Math.min(0.85, r)); if (bothExpanded()) { $("docPanel").style.flex = `${ratio} 1 0`; $("graphPanel").style.flex = `${1 - ratio} 1 0`; } }
-function applyFlex() { if (bothExpanded()) setSplit(ratio); else { $("docPanel").style.flex = ""; $("graphPanel").style.flex = ""; } }
-function fitGraph() { if (cy && !$("graphPanel").classList.contains("collapsed")) requestAnimationFrame(() => { cy.resize(); cy.fit(undefined, 40); }); }
-function syncResizer() { $("resizer").classList.toggle("hidden", !bothExpanded()); }
-function setArrows() { for (const p of ["docPanel", "graphPanel"]) $(p).querySelector(".toggle").textContent = $(p).classList.contains("collapsed") ? "▸" : "▾"; }
-function togglePanel(which) {
-  const el = which === "doc" ? $("docPanel") : $("graphPanel");
-  el.classList.toggle("collapsed");
-  if (which === "graph" && !el.classList.contains("collapsed") && !cy) buildGraph();
-  applyFlex(); setArrows(); syncResizer(); fitGraph(); saveState();
+/* ---- 패널: 접기/분할/크기조절 ---- */
+function isOpen(id) { return !$(id).classList.contains("collapsed"); }
+function applyFlex() { for (const id of PANELS) $(id).style.flex = isOpen(id) ? `${grows[id]} 1 0` : "0 0 auto"; }
+function fitGraph() { if (cy && isOpen("graphPanel")) requestAnimationFrame(() => { cy.resize(); cy.fit(undefined, 40); }); }
+function setArrows() { for (const id of PANELS) $(id).querySelector(".toggle").textContent = isOpen(id) ? "▾" : "▸"; }
+function syncResizers() { document.querySelectorAll(".resizer").forEach((rz) => { const [a, b] = rz.dataset.between.split(","); rz.classList.toggle("hidden", !(isOpen(a) && isOpen(b))); }); }
+function refreshPanels() { applyFlex(); setArrows(); syncResizers(); fitGraph(); saveState(); }
+function togglePanel(id) {
+  $(id).classList.toggle("collapsed");
+  if (id === "graphPanel" && isOpen(id) && !cy) buildGraph();
+  if (id === "chatPanel" && isOpen(id)) setTimeout(() => $("chatin").focus(), 0);
+  refreshPanels();
 }
 function toggleLayout() { const h = $("center").classList.toggle("horizontal"); $("layout").textContent = h ? "⬌ 좌우" : "⬍ 상하"; applyFlex(); fitGraph(); saveState(); }
-function initResize() {
-  const center = $("center");
-  const move = (e) => { const rect = center.getBoundingClientRect();
-    setSplit(center.classList.contains("horizontal") ? (e.clientX - rect.left) / rect.width : (e.clientY - rect.top) / rect.height);
-    if (cy && !$("graphPanel").classList.contains("collapsed")) cy.resize(); };
-  const up = () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); fitGraph(); saveState(); };
-  $("resizer").addEventListener("mousedown", (e) => { if ($("resizer").classList.contains("hidden")) return; e.preventDefault(); document.addEventListener("mousemove", move); document.addEventListener("mouseup", up); });
+function initResizers() {
+  document.querySelectorAll(".resizer").forEach((rz) => {
+    const [aId, bId] = rz.dataset.between.split(",");
+    rz.addEventListener("mousedown", (e) => {
+      if (rz.classList.contains("hidden")) return; e.preventDefault();
+      const a = $(aId), b = $(bId), horiz = $("center").classList.contains("horizontal");
+      const move = (ev) => {
+        const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+        const start = horiz ? ra.left : ra.top, end = horiz ? rb.right : rb.bottom;
+        let frac = ((horiz ? ev.clientX : ev.clientY) - start) / (end - start);
+        frac = Math.max(0.12, Math.min(0.88, frac));
+        const sum = grows[aId] + grows[bId]; grows[aId] = sum * frac; grows[bId] = sum * (1 - frac);
+        applyFlex(); if (cy) cy.resize();
+      };
+      const up = () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); fitGraph(); saveState(); };
+      document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
+    });
+  });
 }
 
+/* ---- 사용법 모달 ---- */
+function buildHelp() {
+  $("helpTable").innerHTML = "<tr><th>#</th><th>알고 싶은 것</th><th>표현식</th><th>나오는 것</th></tr>" +
+    HELP.map(([want, expr, res], i) => `<tr><td>${i + 1}</td><td>${esc(want)}</td><td><code data-expr="${esc(expr)}">${esc(expr)}</code></td><td>${esc(res)}</td></tr>`).join("");
+  $("helpTable").querySelectorAll("code[data-expr]").forEach((c) => c.addEventListener("click", () => {
+    $("q").value = c.dataset.expr; $("helpModal").classList.add("hidden"); $("q").focus();
+  }));
+}
+function toggleHelp(show) { $("helpModal").classList.toggle("hidden", show === false ? true : show === true ? false : undefined); }
+
+/* ---- 채팅(WebLLM, 선택) ---- */
+function bubble(role, html) { const d = document.createElement("div"); d.className = "bubble " + role; d.innerHTML = html; $("chatlog").appendChild(d); $("chatlog").scrollTop = $("chatlog").scrollHeight; return d; }
+async function ensureLLM() {
+  if (llm || llmTried) return llm;
+  llmTried = true;
+  const b = bubble("sys", "🤖 브라우저 AI 모델 로딩 중… (처음 한 번만, 수백 MB)");
+  try {
+    const webllm = await import("https://esm.run/@mlc-ai/web-llm");
+    llm = await webllm.CreateMLCEngine("Qwen2.5-0.5B-Instruct-q4f16_1-MLC",
+      { initProgressCallback: (p) => { b.textContent = "🤖 로딩 " + Math.round((p.progress || 0) * 100) + "%"; } });
+    b.textContent = "🤖 AI 준비 완료";
+  } catch (e) { b.textContent = "🤖 브라우저 AI 사용 불가(WebGPU 필요). 검색창의 표현식을 쓰세요."; }
+  return llm;
+}
+async function chatAsk(q) {
+  bubble("user", esc(q));
+  const engine = await ensureLLM();
+  const nodeList = allNodes.slice(0, 300).map((n) => `${n.id} | ${n.title} | ${n.type}`).join("\n");
+  if (!engine) { runQuery(q); bubble("bot", `AI 없이 텍스트 검색으로 대신 찾았어요. 좌측 목록 확인(${lastIds.length}건).`); return; }
+  const thinking = bubble("bot", "…");
+  try {
+    const sys1 = `너는 지식그래프 질의 변환기다. 사용자 질문을 아래 중 정확히 한 줄로만 출력(설명 금지).
+- search <키워드>
+- neighbors <id> --depth <N> --direction both
+- path <id> <id>
+- SELECT id,title FROM nodes WHERE ...
+스키마: nodes(id,title,type,namespace,visibility,summary,confidence REAL,tags,body), edges(source,type,target,weight,note). id는 kebab-case.
+노드(id | title | type):\n${nodeList}`;
+    const r1 = await engine.chat.completions.create({ messages: [{ role: "system", content: sys1 }, { role: "user", content: q }], temperature: 0 });
+    const query = (r1.choices[0].message.content || "").trim().split("\n")[0].replace(/^`+|`+$/g, "").trim();
+    runQuery(query);                 // 화면(목록·그래프)도 그 질의로 갱신
+    const ctx = lastIds.slice(0, 8).map((id) => { const n = rows("SELECT title,type,summary FROM nodes WHERE id=?", [id])[0] || {}; return `- ${id}: ${n.title || ""} (${n.type || ""}) ${n.summary || ""}`; }).join("\n");
+    const sys2 = `너는 지식그래프 비서다. 아래 '검색 결과'만 근거로 한국어로 2~4문장 답하라. 모르면 모른다고 하라.\n질의: ${query}\n검색 결과:\n${ctx || "(없음)"}`;
+    const r2 = await engine.chat.completions.create({ messages: [{ role: "system", content: sys2 }, { role: "user", content: q }], temperature: 0.2 });
+    thinking.innerHTML = esc((r2.choices[0].message.content || "").trim()) + `<br><span style="opacity:.6;font-size:12px">↳ ${esc(query)} · ${lastIds.length}건</span>`;
+  } catch (e) { thinking.textContent = "오류: " + e.message; }
+}
+
+function runQueryFromBox() { runQuery($("q").value); }
 async function main() {
   try {
     const SQL = await initSqlJs({ locateFile: (f) => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${f}` });
     [rawNodes, rawEdges] = await Promise.all([fetchCSV("nodes.csv"), fetchCSV("edges.csv")]);
     db = buildDb(SQL, rawNodes, rawEdges);
-    allNodes = rows("SELECT id, title, type FROM nodes ORDER BY type, title");
-    const nc = rows("SELECT COUNT(*) c FROM nodes")[0].c, ec = rows("SELECT COUNT(*) c FROM edges")[0].c;
-    note(`노드 ${nc} · 엣지 ${ec}`);
+    allNodes = rows("SELECT id,title,type FROM nodes ORDER BY type,title");
+    note(`노드 ${rows("SELECT COUNT(*) c FROM nodes")[0].c} · 엣지 ${rows("SELECT COUNT(*) c FROM edges")[0].c}`);
+    buildHelp();
 
     const st = loadState();
     if (st.horizontal) $("center").classList.add("horizontal");
     $("layout").textContent = $("center").classList.contains("horizontal") ? "⬌ 좌우" : "⬍ 상하";
-    if (typeof st.ratio === "number") ratio = st.ratio;
-    if (st.docCollapsed) $("docPanel").classList.add("collapsed");
-    if (st.graphCollapsed === false) { $("graphPanel").classList.remove("collapsed"); buildGraph(); }
+    if (st.grows) grows = Object.assign(grows, st.grows);
+    if (st.collapsed) for (const id of PANELS) if (id in st.collapsed) $(id).classList.toggle("collapsed", !!st.collapsed[id]);
+    if (isOpen("graphPanel")) buildGraph();
 
     renderList(null);
     const fp = (rows("SELECT id FROM nodes WHERE type='pillar' ORDER BY id LIMIT 1")[0] || {}).id;
     const want = (st.current && allNodes.some((n) => n.id === st.current)) ? st.current : (fp || (allNodes[0] || {}).id);
-    if (want) select(want); else $("doc").innerHTML = '<p class="placeholder">노드가 없습니다.</p>';
-    setArrows(); syncResizer(); applyFlex(); fitGraph();
+    if (want) select(want);
+    setArrows(); syncResizers(); applyFlex(); fitGraph();
 
-    $("docPanel").querySelector(".phead").addEventListener("click", () => togglePanel("doc"));
-    $("graphPanel").querySelector(".phead").addEventListener("click", () => togglePanel("graph"));
+    PANELS.forEach((id) => $(id).querySelector(".phead").addEventListener("click", () => togglePanel(id)));
     $("layout").addEventListener("click", toggleLayout);
-    $("ai").addEventListener("click", () => { if (!aiOn && !llm) enableAI(); else { aiOn = !aiOn; $("ai").textContent = aiOn ? "🤖 AI 켜짐" : "🤖 AI 꺼짐"; } });
-    initResize();
+    $("help").addEventListener("click", () => $("helpModal").classList.remove("hidden"));
+    $("helpClose").addEventListener("click", () => $("helpModal").classList.add("hidden"));
+    $("helpModal").addEventListener("click", (e) => { if (e.target === $("helpModal")) $("helpModal").classList.add("hidden"); });
+    initResizers();
+
     let timer;
-    $("q").addEventListener("input", (ev) => { const s = ev.target.value; if (aiOn || classify(s) !== "text") return; clearTimeout(timer); timer = setTimeout(() => runQuery(s, false), 200); });
-    $("q").addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); runQuery(ev.target.value, true); } });
+    $("q").addEventListener("input", (ev) => { if (classify(ev.target.value) !== "text") return; clearTimeout(timer); timer = setTimeout(runQueryFromBox, 200); });
+    $("q").addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); runQueryFromBox(); } });
+    $("chatform").addEventListener("submit", (ev) => { ev.preventDefault(); const v = $("chatin").value.trim(); if (v) { $("chatin").value = ""; chatAsk(v); } });
+
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") { $("helpModal").classList.add("hidden"); return; }
+      const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement && document.activeElement.tagName);
+      if (ev.altKey && ev.key === "1") { ev.preventDefault(); togglePanel("docPanel"); }
+      else if (ev.altKey && ev.key === "2") { ev.preventDefault(); togglePanel("graphPanel"); }
+      else if (ev.altKey && ev.key === "3") { ev.preventDefault(); togglePanel("chatPanel"); }
+      else if (ev.key === "?" && !typing) { ev.preventDefault(); $("helpModal").classList.remove("hidden"); }
+    });
     window.addEventListener("resize", fitGraph);
   } catch (err) { note("오류: " + err.message); console.error(err); }
 }

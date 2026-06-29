@@ -3,7 +3,9 @@
    브라우저가 CSV를 받아 sql.js(SQLite WASM)로 조회한다. */
 "use strict";
 
-const DATA_BASE = "./data/";
+// 배포 시: web/data/ (워크플로가 복사) → ./data/. 로컬: 저장소 루트에서 서버 띄우고
+// /web/ 를 열면 ../data/ 로 폴백되어 복사 없이 동작.
+const DATA_BASES = ["./data/", "../data/"];
 const TYPE_COLORS = {
   pillar: "#7c3aed", concept: "#2563eb", fact: "#059669",
   decision: "#d97706", question: "#dc2626", playbook: "#0891b2",
@@ -16,9 +18,13 @@ const esc = (s) => (s == null ? "" : String(s).replace(/[&<>]/g, (c) =>
 let db = null, cy = null, current = null, allNodes = [];
 
 async function fetchCSV(name) {
-  const res = await fetch(DATA_BASE + name);
-  if (!res.ok) throw new Error(`${name} 로드 실패 (${res.status})`);
-  return Papa.parse(await res.text(), { header: true, skipEmptyLines: true }).data;
+  for (const base of DATA_BASES) {
+    try {
+      const res = await fetch(base + name);
+      if (res.ok) return Papa.parse(await res.text(), { header: true, skipEmptyLines: true }).data;
+    } catch (e) { /* 다음 경로 시도 */ }
+  }
+  throw new Error(`${name} 로드 실패 — data/ (또는 ../data/)에 CSV가 있어야 합니다`);
 }
 function rows(sql, params = []) {
   const out = [], st = db.prepare(sql);

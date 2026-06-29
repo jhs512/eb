@@ -9,9 +9,10 @@
 - 검색창: **클라이언트 사이드 SQLite**로 `title/summary/tags/body` 부분일치 조회 → 좌측 목록 필터.
 
 ## 로컬 미리보기
+저장소 루트에서 서버를 띄우고 `/web/`을 연다(앱이 `./data/` 실패 시 `../data/`로 폴백 → 복사 불필요):
 ```bash
-cp -r ../data ./data          # 앱은 ./data/*.csv 를 읽는다(배포 시 워크플로가 복사)
-python -m http.server 8000    # http://localhost:8000
+cd ..                         # 저장소 루트
+python -m http.server 8000    # → http://localhost:8000/web/
 ```
 
 ## 배포

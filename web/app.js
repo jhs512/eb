@@ -16,7 +16,7 @@ const $ = (id) => document.getElementById(id);
 
 let db = null, cy = null, current = null, allNodes = [], rawNodes = [], rawEdges = [];
 let grows = { docPanel: 1, graphPanel: 1, chatPanel: 1 }, lastIds = [];
-let llm = null, llmTried = false;
+let llm = null, llmTried = false, chatHistory = [];   // 대화 메모리(후속 질문용)
 
 const HELP = [
   ["'분산락' 관련 노트 다 찾아", "분산락", "제목·요약·태그·본문 부분일치(랭크)"],
@@ -271,25 +271,35 @@ async function ensureLLM() {
 }
 async function chatAsk(q) {
   bubble("user", esc(q));
+  if (q.startsWith("~~")) {                       // 채팅에서 검색창 직접 제어 (LLM 미사용)
+    const expr = q.slice(2).trim();
+    if (!expr) { bubble("sys", "~~ 뒤에 검색식을 적어주세요. 예) ~~ neighbors redis --depth 2"); return; }
+    $("q").value = expr; runQuery(expr);
+    bubble("sys", `🔎 검색창 실행: ${esc(expr)} · ${lastIds.length}건 (좌측 목록·그래프 갱신)`);
+    return;
+  }
   const engine = await ensureLLM();
   const nodeList = allNodes.slice(0, 300).map((n) => `${n.id} | ${n.title} | ${n.type}`).join("\n");
   if (!engine) { runQuery(q); bubble("bot", `AI 없이 텍스트 검색으로 대신 찾았어요. 좌측 목록 확인(${lastIds.length}건).`); return; }
   const thinking = bubble("bot", "…");
+  const hist = chatHistory.slice(-6);   // 최근 대화 맥락(후속 질문 해석용)
   try {
-    const sys1 = `너는 지식그래프 질의 변환기다. 사용자 질문을 아래 중 정확히 한 줄로만 출력(설명 금지).
+    const sys1 = `너는 지식그래프 질의 변환기다. (이전 대화 맥락이 있으면 대명사를 해석해) 사용자 질문을 아래 중 정확히 한 줄로만 출력(설명 금지).
 - search <키워드>
 - neighbors <id> --depth <N> --direction both
 - path <id> <id>
 - SELECT id,title FROM nodes WHERE ...
 스키마: nodes(id,title,type,namespace,visibility,summary,confidence REAL,tags,body), edges(source,type,target,weight,note). id는 kebab-case.
 노드(id | title | type):\n${nodeList}`;
-    const r1 = await engine.chat.completions.create({ messages: [{ role: "system", content: sys1 }, { role: "user", content: q }], temperature: 0 });
+    const r1 = await engine.chat.completions.create({ messages: [{ role: "system", content: sys1 }, ...hist, { role: "user", content: q }], temperature: 0 });
     const query = (r1.choices[0].message.content || "").trim().split("\n")[0].replace(/^`+|`+$/g, "").trim();
     runQuery(query);                 // 화면(목록·그래프)도 그 질의로 갱신
     const ctx = lastIds.slice(0, 8).map((id) => { const n = rows("SELECT title,type,summary FROM nodes WHERE id=?", [id])[0] || {}; return `- ${id}: ${n.title || ""} (${n.type || ""}) ${n.summary || ""}`; }).join("\n");
-    const sys2 = `너는 지식그래프 비서다. 아래 '검색 결과'만 근거로 한국어로 2~4문장 답하라. 모르면 모른다고 하라.\n질의: ${query}\n검색 결과:\n${ctx || "(없음)"}`;
-    const r2 = await engine.chat.completions.create({ messages: [{ role: "system", content: sys2 }, { role: "user", content: q }], temperature: 0.2 });
-    thinking.innerHTML = esc((r2.choices[0].message.content || "").trim()) + `<br><span style="opacity:.6;font-size:12px">↳ ${esc(query)} · ${lastIds.length}건</span>`;
+    const sys2 = `너는 지식그래프 비서다. 아래 '검색 결과'와 이전 대화를 근거로 한국어로 2~4문장 답하라. 모르면 모른다고 하라.\n질의: ${query}\n검색 결과:\n${ctx || "(없음)"}`;
+    const r2 = await engine.chat.completions.create({ messages: [{ role: "system", content: sys2 }, ...hist, { role: "user", content: q }], temperature: 0.2 });
+    const ans = (r2.choices[0].message.content || "").trim();
+    chatHistory.push({ role: "user", content: q }, { role: "assistant", content: ans });   // 메모리 누적
+    thinking.innerHTML = esc(ans) + `<br><span style="opacity:.6;font-size:12px">↳ ${esc(query)} · ${lastIds.length}건</span>`;
   } catch (e) { thinking.textContent = "오류: " + e.message; }
 }
 
@@ -327,7 +337,7 @@ async function main() {
     $("q").addEventListener("input", (ev) => { if (classify(ev.target.value) !== "text") return; clearTimeout(timer); timer = setTimeout(runQueryFromBox, 200); });
     $("q").addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); runQueryFromBox(); } });
     $("chatform").addEventListener("submit", (ev) => { ev.preventDefault(); const v = $("chatin").value.trim(); if (v) { $("chatin").value = ""; chatAsk(v); } });
-    $("chatclear").addEventListener("click", () => { $("chatlog").innerHTML = ""; $("chatin").focus(); });
+    $("chatclear").addEventListener("click", () => { $("chatlog").innerHTML = ""; chatHistory = []; $("chatin").focus(); });
 
     document.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape") { $("helpModal").classList.add("hidden"); return; }

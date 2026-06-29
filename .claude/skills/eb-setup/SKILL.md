@@ -44,21 +44,35 @@ python eb.py stats        # 노드 0, 엣지 0 이면 정상 부트스트랩
 python eb.py validate     # 문제 없음
 ```
 
-## 5. 다음
+## 5. 선택 연동 셋업 — 사용자에게 물어본다 (필수)
+부트스트랩·검증이 끝나면 **곧바로 사용자에게 물어본다**: 아래 선택 연동을 지금 같이 설정할지. 임의로 진행하지 말고, 원하는 것만 고르게 한 뒤 **의존 순서대로** 해당 스킬을 실행/안내한다. 모두 브라우저나 외부 인증이 필요하므로, 시작 전에 전제(브라우저 자동화·gh 인증)를 확인한다.
+
+- **eb-gcp** — Google Sheets 미러용 GCP 자격증명(구글 계정당 1회). `~/.config/eb/sheets-sync.env` 가 이미 있으면 건너뛸 수 있음. (eb-sheets 선행)
+- **eb-sheets** — 이 저장소를 Google Sheet에 단방향 미러(=eb-gcp 필요).
+- **eb-pages** — 그래프를 Cloudflare Pages 정적 웹앱으로 배포.
+- **eb-github** — 저장소를 GitHub에 올리고 위 연동들의 CI 자동화를 켠다(=연동 설정 후에 하면 시크릿/변수를 함께 등록).
+
+권장 순서: **eb-gcp → eb-sheets → eb-pages → eb-github**. 아무것도 원치 않으면 건너뛴다.
+
+## 6. 다음
 - 지식 추가는 `eb-learn`, 조회는 `eb-ask`, 정제는 `eb-clean`, 점검은 `eb-check`.
 - 엔진을 갱신하려면 `<REF>`를 올려 다시 이 절차를 돌린다(데이터 CSV는 보존).
 
-## 부록: 5스킬 설치 (skills-lock)
-다른 저장소에서 eb 스킬을 쓰려면 `skills-lock.json`에 `source: jhs512/eb`로 잠근다(기존 `mattpocock/skills` 항목과 동일 형식):
+## 부록: 스킬 설치 (skills-lock)
+다른 저장소에서 eb 스킬을 쓰려면 `skills-lock.json`에 `source: jhs512/eb`로 잠근다(기존 `mattpocock/skills` 항목과 동일 형식). 핵심 4종(`eb-learn`/`eb-ask`/`eb-clean`/`eb-check`)에 더해, 부트스트랩 `eb-setup`과 선택 연동(`eb-gcp`/`eb-sheets`/`eb-pages`/`eb-github`)을 함께 잠근다:
 ```json
 {
   "version": 1,
   "skills": {
-    "eb-setup":    { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-setup/SKILL.md" },
-    "eb-learn": { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-learn/SKILL.md" },
-    "eb-ask":  { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-ask/SKILL.md" },
+    "eb-setup":  { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-setup/SKILL.md" },
+    "eb-learn":  { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-learn/SKILL.md" },
+    "eb-ask":    { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-ask/SKILL.md" },
     "eb-clean":  { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-clean/SKILL.md" },
-    "eb-check":  { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-check/SKILL.md" }
+    "eb-check":  { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-check/SKILL.md" },
+    "eb-gcp":    { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-gcp/SKILL.md" },
+    "eb-sheets": { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-sheets/SKILL.md" },
+    "eb-pages":  { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-pages/SKILL.md" },
+    "eb-github": { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-github/SKILL.md" }
   }
 }
 ```

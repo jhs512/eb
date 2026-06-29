@@ -21,3 +21,6 @@ __pycache__/
 *.sqlite
 .eb-cache.sqlite
 **/.eb-cache.sqlite
+
+# web 앱 배포 시 생성되는 CSV 복사본(파생물)
+web/data/

@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://github.com/jhs512/eb/actions/workflows/tests.yml"><img src="https://github.com/jhs512/eb/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
-  <img src="https://img.shields.io/badge/Version-0.8.0-brightgreen.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Version-0.8.1-brightgreen.svg" alt="Version">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/Python-3.10+-3776ab.svg" alt="Python">
   <img src="https://img.shields.io/badge/Deps-stdlib_only_(core)-orange.svg" alt="stdlib only">
@@ -165,8 +165,9 @@ python sync.py --data data --check      # 드리프트 감지(역기록 없음 �
 [`web/`](web/) 는 **서버 없이 브라우저에서만** 도는 정적 앱이다 — `data/*.csv`를 fetch → **sql.js(SQLite WASM)** 로 조회 → **cytoscape.js** 로 리치하게 렌더(검색·클릭 상세, 전부 클라이언트 사이드). GitHub Action(`.github/workflows/deploy-pages.yml`)이 **최초(수동 dispatch)·CSV 변경·`web/` 변경 시에만** Cloudflare Pages로 배포한다(매 push 아님). 셋업은 [`eb-pages` 스킬](.claude/skills/eb-pages/SKILL.md), 설계는 [ADR-0008](docs/adr/0008-cloudflare-pages-client-side-app.md).
 
 ```bash
-cp -r data web/data && (cd web && python -m http.server 8000)   # 로컬 미리보기
+python -m http.server 8000      # 저장소 루트에서 → http://localhost:8000/web/
 ```
+(앱은 `./data/` 실패 시 `../data/`로 폴백하므로, 루트에서 띄우고 `/web/`을 열면 복사 없이 동작한다.)
 
 ## 테스트
 

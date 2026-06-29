@@ -10,8 +10,8 @@
 set -euo pipefail
 
 REF="${1:-v0.5.1}"
-# 핵심 5스킬 + 온보딩 4스킬(시트 연동·페이지 배포·GitHub/CI). tests/test_skills.py 가 실제 스킬과 대조한다.
-SKILLS="eb-setup eb-learn eb-ask eb-clean eb-check eb-gcp eb-sheets eb-pages eb-github"
+# 핵심 5스킬 + 온보딩 4스킬(시트 연동·페이지 배포·GitHub/CI) + 상태 점검 1스킬. tests/test_skills.py 가 실제 스킬과 대조한다.
+SKILLS="eb-setup eb-learn eb-ask eb-clean eb-check eb-gcp eb-sheets eb-pages eb-github eb-status"
 BASE="https://raw.githubusercontent.com/jhs512/eb/${REF}/.claude/skills"
 
 echo "eb 스킬 설치 (ref=${REF}) → .claude/skills/"

@@ -47,7 +47,7 @@ class SkillMetadataTest(unittest.TestCase):
         self.assertEqual(
             names,
             {"eb-setup", "eb-learn", "eb-ask", "eb-clean", "eb-check",
-             "eb-gcp", "eb-sheets", "eb-pages", "eb-github"})
+             "eb-gcp", "eb-sheets", "eb-pages", "eb-github", "eb-status"})
 
     def test_frontmatter_name_matches_dir(self):
         for d in SKILL_DIRS:

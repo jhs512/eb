@@ -72,7 +72,8 @@ python eb.py validate     # 문제 없음
     "eb-gcp":    { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-gcp/SKILL.md" },
     "eb-sheets": { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-sheets/SKILL.md" },
     "eb-pages":  { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-pages/SKILL.md" },
-    "eb-github": { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-github/SKILL.md" }
+    "eb-github": { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-github/SKILL.md" },
+    "eb-status": { "source": "jhs512/eb", "sourceType": "github", "skillPath": ".claude/skills/eb-status/SKILL.md" }
   }
 }
 ```

@@ -42,6 +42,13 @@
         <div class="pbody chatbody">
           <div id="chatlog" class="chatlog"></div>
           <form id="chatform" class="chatform">
+            <select id="chatmodel" class="chatmodel" title="AI 모델 (클수록 똑똑하지만 다운로드·메모리↑)">
+              <option value="Qwen2.5-0.5B-Instruct-q4f16_1-MLC">Qwen2.5 0.5B · 초경량 ~0.5GB</option>
+              <option value="Qwen2.5-1.5B-Instruct-q4f16_1-MLC">Qwen2.5 1.5B · 가벼움 ~1GB</option>
+              <option value="Qwen2.5-3B-Instruct-q4f16_1-MLC" selected>Qwen2.5 3B · 추천 ~2GB</option>
+              <option value="Llama-3.2-3B-Instruct-q4f16_1-MLC">Llama 3.2 3B · ~2.2GB</option>
+              <option value="Qwen2.5-7B-Instruct-q4f16_1-MLC">Qwen2.5 7B · 고품질 ~4.7GB</option>
+            </select>
             <input id="chatin" type="text" placeholder="자연어 질문 · 또는 ~~ 로 검색창 직접 실행 (예: ~~ neighbors redis --depth 2)">
             <button type="submit">전송</button>
             <button type="button" id="chatclear" class="ghost" title="대화 지우기">지우기</button>

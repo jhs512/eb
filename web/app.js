@@ -16,7 +16,8 @@ const $ = (id) => document.getElementById(id);
 
 let db = null, cy = null, current = null, allNodes = [], rawNodes = [], rawEdges = [];
 let grows = { docPanel: 1, graphPanel: 1.5, chatPanel: 1 }, lastIds = [];
-let llm = null, llmTried = false, chatHistory = [];   // 대화 메모리(후속 질문용)
+let llm = null, llmTried = false, llmModel = null, chatHistory = [];   // 대화 메모리(후속 질문용)
+const LS_MODEL = "eb-chat-model";
 
 const HELP = [
   ["'분산락' 관련 노트 다 찾아", "분산락", "제목·요약·태그·본문 부분일치(랭크)"],
@@ -298,15 +299,16 @@ function toggleHelp(show) { $("helpModal").classList.toggle("hidden", show === f
 /* ---- 채팅(WebLLM, 선택) ---- */
 function bubble(role, html) { const d = document.createElement("div"); d.className = "bubble " + role; d.innerHTML = html; $("chatlog").appendChild(d); $("chatlog").scrollTop = $("chatlog").scrollHeight; return d; }
 async function ensureLLM() {
-  if (llm || llmTried) return llm;
-  llmTried = true;
-  const b = bubble("sys", "🤖 브라우저 AI 모델 로딩 중… (처음 한 번만, 수백 MB)");
+  const model = $("chatmodel").value, label = $("chatmodel").selectedOptions[0].textContent;
+  if (llmModel === model && (llm || llmTried)) return llm;   // 같은 모델 재사용/재시도금지
+  llmTried = true; llmModel = model; llm = null;
+  const b = bubble("sys", `🤖 ${label} 로딩 중… (처음 한 번만)`);
   try {
     const webllm = await import("https://esm.run/@mlc-ai/web-llm");
-    llm = await webllm.CreateMLCEngine("Qwen2.5-0.5B-Instruct-q4f16_1-MLC",
-      { initProgressCallback: (p) => { b.textContent = "🤖 로딩 " + Math.round((p.progress || 0) * 100) + "%"; } });
-    b.textContent = "🤖 AI 준비 완료";
-  } catch (e) { b.textContent = "🤖 브라우저 AI 사용 불가(WebGPU 필요). 검색창의 표현식을 쓰세요."; }
+    llm = await webllm.CreateMLCEngine(model,
+      { initProgressCallback: (p) => { b.textContent = `🤖 ${label} 로딩 ${Math.round((p.progress || 0) * 100)}%`; } });
+    b.textContent = `🤖 ${label} 준비 완료`;
+  } catch (e) { b.textContent = "🤖 로드 실패(WebGPU/메모리 부족 가능). 더 작은 모델을 고르거나 검색창의 표현식을 쓰세요."; }
   return llm;
 }
 function uiIntent(q) {                            // 자연어 UI 제어 (LLM 없이 규칙으로)
@@ -421,6 +423,11 @@ async function main() {
     $("q").addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); runQueryFromBox(); } });
     $("chatform").addEventListener("submit", (ev) => { ev.preventDefault(); const v = $("chatin").value.trim(); if (v) { $("chatin").value = ""; chatAsk(v); } });
     $("chatclear").addEventListener("click", () => { $("chatlog").innerHTML = ""; chatHistory = []; $("chatin").focus(); });
+    try { const m = localStorage.getItem(LS_MODEL); if (m && [...$("chatmodel").options].some((o) => o.value === m)) $("chatmodel").value = m; } catch (e) {}
+    $("chatmodel").addEventListener("change", () => {
+      try { localStorage.setItem(LS_MODEL, $("chatmodel").value); } catch (e) {}
+      if (llmModel && llmModel !== $("chatmodel").value) { llm = null; llmTried = false; bubble("sys", "모델을 바꿨어요. 다음 질문 때 새로 받습니다."); }
+    });
 
     document.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape") { $("helpModal").classList.add("hidden"); return; }

@@ -40,7 +40,7 @@ gh variable set CF_PAGES_PROJECT --body <project-name>
 ```
 
 ## 4.5 Basic Auth — 개인 그래프 보호 (기본 잠금)
-배포된 정적 사이트는 `data/*.csv` 를 그대로 서빙하므로, **개인 그래프(보통 private 노드 포함)는 인증으로 막는다.** `web/functions/_middleware.js`(Cloudflare Pages Function)가 모든 경로에 먼저 실행되어 **기본 fail-closed**다 — 잠금이 안 풀리면 503.
+배포된 정적 사이트는 `data/*.csv` 를 그대로 서빙하므로, **개인 그래프(보통 private 노드 포함)는 인증으로 막는다.** `web/_worker.js`(Cloudflare Pages advanced 모드 Worker)가 모든 요청을 가로채 **기본 fail-closed**다 — 잠금이 안 풀리면 503, CSV 직접 접근도 막힌다. (`functions/_middleware.js` 방식은 `wrangler pages deploy` 직접 업로드에서 적용 안 돼 `_worker.js` 로 일원화.)
 - 잠금 풀기(권장): Pages 프로젝트 환경변수에 `BASIC_AUTH_PASS`(ASCII 비밀번호), 선택 `BASIC_AUTH_USER`(기본 `eb`) 설정.
   ```bash
   npx wrangler pages secret put BASIC_AUTH_PASS --project-name <project>   # 값은 사람이 입력

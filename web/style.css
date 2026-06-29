@@ -20,6 +20,17 @@ main { display: flex; flex: 1; min-height: 0; }
 #list li .t { font-size: 11px; opacity: .65; }
 #list .empty { color: #9aa3b2; padding: 12px; font-size: 13px; }
 
+/* 네임스페이스 필터(체크 해제 시 모든 연산에서 제외) */
+.nsbar { padding: 8px; border-bottom: 1px solid #e4e7ee; background: #f4f6fa; position: sticky; top: 0; z-index: 2; max-height: 42%; overflow: auto; }
+.nshead { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 6px; }
+.nstoggle { border: 1px solid #cbd2dd; background: #fff; border-radius: 6px; padding: 2px 8px; font-size: 11px; cursor: pointer; color: #374151; }
+.nstoggle:hover { background: #eef1f6; }
+.nsitem { display: flex; align-items: center; gap: 6px; padding: 3px 4px; font-size: 13px; border-radius: 6px; cursor: pointer; }
+.nsitem:hover { background: #eef1f6; }
+.nsitem input { margin: 0; cursor: pointer; }
+.nsitem .nsname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nsitem b { font-size: 11px; color: #9aa3b2; font-weight: 600; }
+
 /* 패널 — 상하(기본)/좌우 분할, 각 패널 접기/크기조절 */
 .center { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
 .center.horizontal { flex-direction: row; }

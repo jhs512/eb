@@ -15,6 +15,7 @@ const esc = (s) => (s == null ? "" : String(s).replace(/[&<>]/g, (c) => ({ "&": 
 const $ = (id) => document.getElementById(id);
 
 let db = null, cy = null, current = null, allNodes = [], rawNodes = [], rawEdges = [];
+let SQLref = null, activeNs = null, fNodes = [], fEdges = [];   // 네임스페이스 필터(활성만 모든 연산에 반영)
 let grows = { docPanel: 1, graphPanel: 1.5, chatPanel: 1 }, lastIds = [];
 let llm = null, llmTried = false, llmModel = null, chatHistory = [];   // 대화 메모리(후속 질문용)
 const LS_MODEL = "eb-chat-model";
@@ -56,11 +57,60 @@ function buildDb(SQL, nodes, edges) {
   return d;
 }
 
+/* ---- 네임스페이스 필터: 체크 안 된 네임스페이스는 모든 연산에서 제외 ---- */
+const nsKey = (n) => (((n && n.namespace) || "") + "").trim() || "(없음)";
+function allNamespaces() {
+  const m = new Map();
+  for (const n of rawNodes) { const k = nsKey(n); m.set(k, (m.get(k) || 0) + 1); }
+  return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], "ko"));
+}
+function rebuildDb() {                                // 활성 네임스페이스만으로 DB/allNodes 재구성
+  fNodes = rawNodes.filter((n) => activeNs.has(nsKey(n)));
+  const ids = new Set(fNodes.map((n) => (n.id || "").trim()).filter(Boolean));
+  fEdges = rawEdges.filter((e) => ids.has((e.source || "").trim()) && ids.has((e.target || "").trim()));
+  db = buildDb(SQLref, fNodes, fEdges);
+  allNodes = rows("SELECT id,title,type FROM nodes ORDER BY type,title");
+  return ids;
+}
+function nsNote() {
+  const total = allNamespaces().length, on = activeNs.size;
+  note(`노드 ${fNodes.length} · 엣지 ${fEdges.length}` + (on < total ? ` · 네임스페이스 ${on}/${total}` : ""));
+}
+function applyNsFilter() {                            // 토글 시: DB·그래프·목록·문서 전부 갱신
+  const ids = rebuildDb();
+  nsNote();
+  if (cy) { cy.destroy(); cy = null; }
+  if (isOpen("graphPanel")) buildGraph();
+  renderList(null);
+  if (current && !ids.has(current)) current = null;
+  if (current) { renderDoc(current); markCurrent(); }
+  else { const fp = (rows("SELECT id FROM nodes ORDER BY (type='pillar') DESC, id LIMIT 1")[0] || {}).id; if (fp) select(fp); else { $("doc").innerHTML = '<p class="placeholder">(활성 네임스페이스 없음)</p>'; renderList(new Set()); } }
+  saveState();
+}
+function renderNsFilter() {
+  const wrap = $("nsbar"); if (!wrap) return;
+  const all = allNamespaces(), allOn = activeNs.size >= all.length;
+  wrap.innerHTML =
+    `<div class="nshead"><span>네임스페이스</span>` +
+    `<button id="nsAll" class="nstoggle">${allOn ? "전체 해제" : "전체 선택"}</button></div>` +
+    all.map(([k, c]) => `<label class="nsitem"><input type="checkbox" data-ns="${esc(k)}"${activeNs.has(k) ? " checked" : ""}><span class="nsname">${esc(k)}</span><b>${c}</b></label>`).join("");
+  wrap.querySelectorAll("input[data-ns]").forEach((cb) => cb.addEventListener("change", () => {
+    if (cb.checked) activeNs.add(cb.dataset.ns); else activeNs.delete(cb.dataset.ns);
+    applyNsFilter();
+    const a = allNamespaces(); $("nsAll").textContent = activeNs.size >= a.length ? "전체 해제" : "전체 선택";
+  }));
+  $("nsAll").addEventListener("click", () => {
+    if (activeNs.size >= all.length) activeNs.clear(); else for (const [k] of all) activeNs.add(k);
+    renderNsFilter(); applyNsFilter();
+  });
+}
+
 /* ---- 상태 기억 ---- */
 function saveState() {
   try { localStorage.setItem(LS_KEY, JSON.stringify({
     collapsed: Object.fromEntries(PANELS.map((p) => [p, $(p).classList.contains("collapsed")])),
-    horizontal: $("center").classList.contains("horizontal"), grows, current })); } catch (e) {}
+    horizontal: $("center").classList.contains("horizontal"), grows, current,
+    activeNs: activeNs ? [...activeNs] : undefined })); } catch (e) {}
 }
 function loadState() { try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch (e) { return {}; } }
 
@@ -245,9 +295,9 @@ function runQuery(input) {
 
 /* ---- 그래프(lazy) ---- */
 function buildGraph() {
-  const ids = new Set(rawNodes.map((n) => (n.id || "").trim()).filter(Boolean)), els = [];
-  for (const n of rawNodes) { const id = (n.id || "").trim(); if (id) els.push({ data: { id, label: n.title || id, type: n.type || "" } }); }
-  for (const e of rawEdges) { const s = (e.source || "").trim(), t = (e.target || "").trim(); if (ids.has(s) && ids.has(t)) els.push({ data: { source: s, target: t, label: e.type || "" } }); }
+  const ids = new Set(fNodes.map((n) => (n.id || "").trim()).filter(Boolean)), els = [];
+  for (const n of fNodes) { const id = (n.id || "").trim(); if (id) els.push({ data: { id, label: n.title || id, type: n.type || "" } }); }
+  for (const e of fEdges) { const s = (e.source || "").trim(), t = (e.target || "").trim(); if (ids.has(s) && ids.has(t)) els.push({ data: { source: s, target: t, label: e.type || "" } }); }
   cy = cytoscape({ container: $("cy"), elements: els, style: [
     { selector: "node", style: { "background-color": (n) => colorFor(n.data("type")), "label": "data(label)", "font-size": 10, "text-wrap": "wrap", "text-max-width": 90, "width": 20, "height": 20, "color": "#1c2230" } },
     { selector: "node.current", style: { "width": 30, "height": 30, "border-width": 4, "border-color": "#f59e0b", "z-index": 99 } },
@@ -456,13 +506,16 @@ function runQueryFromBox() { runQuery($("q").value); }
 async function main() {
   try {
     const SQL = await initSqlJs({ locateFile: (f) => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${f}` });
+    SQLref = SQL;
     [rawNodes, rawEdges] = await Promise.all([fetchCSV("nodes.csv"), fetchCSV("edges.csv")]);
-    db = buildDb(SQL, rawNodes, rawEdges);
-    allNodes = rows("SELECT id,title,type FROM nodes ORDER BY type,title");
-    note(`노드 ${rows("SELECT COUNT(*) c FROM nodes")[0].c} · 엣지 ${rows("SELECT COUNT(*) c FROM edges")[0].c}`);
+    const st = loadState();
+    const nsAll = allNamespaces().map(([k]) => k);
+    activeNs = new Set(Array.isArray(st.activeNs) ? st.activeNs.filter((k) => nsAll.includes(k)) : nsAll);
+    rebuildDb();                                     // 활성 네임스페이스만으로 DB 구성
+    nsNote();
+    renderNsFilter();
     buildHelp();
 
-    const st = loadState();
     if (st.horizontal) $("center").classList.add("horizontal");
     $("layout").textContent = $("center").classList.contains("horizontal") ? "⬌ 좌우" : "⬍ 상하";
     if (st.grows) grows = Object.assign(grows, st.grows);

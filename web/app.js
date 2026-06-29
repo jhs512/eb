@@ -7,7 +7,7 @@
 const DATA_BASES = ["./data/", "../data/"];
 const LS_KEY = "eb-view-state-v2";
 const PANELS = ["docPanel", "graphPanel", "chatPanel"];
-const CMDS = ["search", "neighbors", "path", "node", "degree", "suggest", "health", "orphans", "components"];
+const CMDS = ["search", "neighbors", "path", "node", "degree", "suggest", "health", "orphans", "components", "layout", "show", "hide", "toggle"];
 const TYPE_COLORS = { pillar: "#7c3aed", concept: "#2563eb", fact: "#059669",
   decision: "#d97706", question: "#dc2626", playbook: "#0891b2", source: "#6b7280", note: "#94a3b8" };
 const colorFor = (t) => TYPE_COLORS[t] || "#64748b";
@@ -29,6 +29,8 @@ const HELP = [
   ["근거 약한(신뢰도 낮은) 노드", "health --confidence 0.6", "저신뢰·미상 노드"],
   ["재검토할 결정들(타입+속성)", "SELECT id,title FROM nodes WHERE type='decision' AND confidence<0.7", "신뢰도 낮은 decision"],
   ["서로 모순되는 지식 쌍", "SELECT source,target FROM edges WHERE type='contradicts'", "contradicts 노드 쌍"],
+  ["화면을 상하/좌우로", "layout 상하", "패널 분할 방향(상하·좌우)"],
+  ["문서 탭 숨기기/열기", "hide 문서  ·  show 그래프", "패널 접기/펼치기(문서·그래프·채팅)"],
 ];
 
 /* ---- 로드/DB ---- */
@@ -117,7 +119,7 @@ function adjSQL(dir) { const o = "SELECT source a,target b FROM edges", i = "SEL
 function runText(q) {
   if (!q.trim()) { renderList(null); highlightInGraph([]); note(`노드 ${allNodes.length}`); return; }
   const like = "%" + q.trim().toLowerCase() + "%";
-  const ids = rows(`SELECT id FROM nodes WHERE lower(title) LIKE ? OR lower(summary) LIKE ? OR lower(tags) LIKE ? OR lower(body) LIKE ?`, [like, like, like, like]).map((r) => r.id);
+  const ids = rows(`SELECT id FROM nodes WHERE lower(id) LIKE ? OR lower(title) LIKE ? OR lower(summary) LIKE ? OR lower(tags) LIKE ? OR lower(body) LIKE ?`, [like, like, like, like, like]).map((r) => r.id);
   renderList(new Set(ids)); highlightInGraph(ids); note(`텍스트 '${q.trim()}': ${ids.length}건`);
 }
 function runSQL(s) {
@@ -167,6 +169,12 @@ function runCmd(s) {
     }
     if (cmd === "suggest") return runSuggest(arg);
     if (cmd === "components") { const c = comps(); renderOrdered(c[0] || []); highlightInGraph(c[0] || []); note(`연결 요소 ${c.length}개 (최대 ${c[0]?.length || 0})`); return; }
+    if (cmd === "layout") { const h = /좌우|가로|h|horizontal/i.test(arg || ""); setLayout(h); note("레이아웃: " + (h ? "좌우" : "상하")); return; }
+    if (cmd === "show" || cmd === "hide" || cmd === "toggle") {
+      const id = resolvePanel(arg); if (!id) { note("패널 이름? 문서/그래프/채팅"); return; }
+      if (cmd === "toggle") togglePanel(id); else setPanelOpen(id, cmd === "show");
+      note(`${arg} ${cmd === "hide" ? "숨김" : cmd === "show" ? "표시" : "토글"}`); return;
+    }
   } catch (e) { note("명령 오류: " + e.message); }
 }
 function comps() {
@@ -225,6 +233,9 @@ function togglePanel(id) {
   refreshPanels();
 }
 function toggleLayout() { const h = $("center").classList.toggle("horizontal"); $("layout").textContent = h ? "⬌ 좌우" : "⬍ 상하"; applyFlex(); fitGraph(); saveState(); }
+function setLayout(horiz) { if (horiz !== $("center").classList.contains("horizontal")) toggleLayout(); }
+function setPanelOpen(id, open) { if (open !== isOpen(id)) togglePanel(id); }
+function resolvePanel(w) { const s = (w || "").toLowerCase(); const m = { "문서": "docPanel", doc: "docPanel", "그래프": "graphPanel", graph: "graphPanel", "채팅": "chatPanel", chat: "chatPanel" }; return m[w] || m[s]; }
 function initResizers() {
   document.querySelectorAll(".resizer").forEach((rz) => {
     const [aId, bId] = rz.dataset.between.split(",");
@@ -269,6 +280,16 @@ async function ensureLLM() {
   } catch (e) { b.textContent = "🤖 브라우저 AI 사용 불가(WebGPU 필요). 검색창의 표현식을 쓰세요."; }
   return llm;
 }
+function uiIntent(q) {                            // 자연어 UI 제어 (LLM 없이 규칙으로)
+  const s = q.replace(/\s/g, "");
+  if (/(상하|세로|수직)(로|으로)?(해|바꿔|만들|배치)?/.test(s)) return () => { setLayout(false); return "화면을 상하 분할로 바꿨어요."; };
+  if (/(좌우|가로|수평)(로|으로)?(해|바꿔|만들|배치)?/.test(s)) return () => { setLayout(true); return "화면을 좌우 분할로 바꿨어요."; };
+  const p = /문서/.test(s) ? "docPanel" : /그래프/.test(s) ? "graphPanel" : /채팅/.test(s) ? "chatPanel" : null;
+  const nm = { docPanel: "문서", graphPanel: "그래프", chatPanel: "채팅" }[p];
+  if (p && /(숨겨|숨김|닫|접|최소화|감춰|hide|꺼|끄)/.test(s)) return () => { setPanelOpen(p, false); return nm + " 탭을 숨겼어요."; };
+  if (p && /(보여|열|펼|표시|show|켜)/.test(s)) return () => { setPanelOpen(p, true); return nm + " 탭을 열었어요."; };
+  return null;
+}
 async function chatAsk(q) {
   bubble("user", esc(q));
   if (q.startsWith("~~")) {                       // 채팅에서 검색창 직접 제어 (LLM 미사용)
@@ -278,22 +299,26 @@ async function chatAsk(q) {
     bubble("sys", `🔎 검색창 실행: ${esc(expr)} · ${lastIds.length}건 (좌측 목록·그래프 갱신)`);
     return;
   }
+  const ui = uiIntent(q);                          // "문서 탭 숨겨줘", "상하로 해줘" 등
+  if (ui) { bubble("sys", "🪟 " + ui()); return; }
   const engine = await ensureLLM();
   const nodeList = allNodes.slice(0, 300).map((n) => `${n.id} | ${n.title} | ${n.type}`).join("\n");
   if (!engine) { runQuery(q); bubble("bot", `AI 없이 텍스트 검색으로 대신 찾았어요. 좌측 목록 확인(${lastIds.length}건).`); return; }
   const thinking = bubble("bot", "…");
   const hist = chatHistory.slice(-6);   // 최근 대화 맥락(후속 질문 해석용)
   try {
-    const sys1 = `너는 지식그래프 질의 변환기다. (이전 대화 맥락이 있으면 대명사를 해석해) 사용자 질문을 아래 중 정확히 한 줄로만 출력(설명 금지).
-- search <키워드>
-- neighbors <id> --depth <N> --direction both
-- path <id> <id>
+    const sys1 = `너는 지식그래프 질의 변환기다. 사용자 질문을 아래 형식 중 정확히 한 줄로만 출력한다. 설명·문장·따옴표 금지, 줄 하나만.
+- search <키워드>            (단어로 찾을 때. 키워드는 한국어 일반어)
+- neighbors <id> --depth <N> --direction both   (X와 관련/연결된 것)
+- path <id> <id>            (A와 B가 어떻게 엮이는지)
 - SELECT id,title FROM nodes WHERE ...
-스키마: nodes(id,title,type,namespace,visibility,summary,confidence REAL,tags,body), edges(source,type,target,weight,note). id는 kebab-case.
+규칙: "관련/연결된 노드"는 neighbors. <id>는 반드시 아래 목록의 실제 id를 그대로. 키워드 검색은 id가 아니라 한국어 단어를 써라.
+예) 질문:"지식은 그래프와 연결된 노드" → neighbors pillar-knowledge-graph --depth 1 --direction both
+스키마: nodes(id,title,type,namespace,visibility,summary,confidence REAL,tags,body), edges(source,type,target,weight,note).
 노드(id | title | type):\n${nodeList}`;
     const r1 = await engine.chat.completions.create({ messages: [{ role: "system", content: sys1 }, ...hist, { role: "user", content: q }], temperature: 0 });
     const query = (r1.choices[0].message.content || "").trim().split("\n")[0].replace(/^`+|`+$/g, "").trim();
-    runQuery(query);                 // 화면(목록·그래프)도 그 질의로 갱신
+    $("q").value = query; runQuery(query);          // 검색창에도 반영 + 화면(목록·그래프) 갱신
     const ctx = lastIds.slice(0, 8).map((id) => { const n = rows("SELECT title,type,summary FROM nodes WHERE id=?", [id])[0] || {}; return `- ${id}: ${n.title || ""} (${n.type || ""}) ${n.summary || ""}`; }).join("\n");
     const sys2 = `너는 지식그래프 비서다. 아래 '검색 결과'와 이전 대화를 근거로 한국어로 2~4문장 답하라. 모르면 모른다고 하라.\n질의: ${query}\n검색 결과:\n${ctx || "(없음)"}`;
     const r2 = await engine.chat.completions.create({ messages: [{ role: "system", content: sys2 }, ...hist, { role: "user", content: q }], temperature: 0.2 });

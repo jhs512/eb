@@ -78,5 +78,16 @@ gh run list --limit 3
 ```
 첫 run이 **시크릿/변수 등록보다 먼저** 트리거되면 빈 값으로 실패할 수 있다(타이밍). 그때는 등록을 마친 뒤 `gh run rerun <run-id>` 로 재실행한다. 성공(`conclusion=success`)을 확인하고 보고한다.
 
-## 6. 완료
+## 6. CLAUDE.md 기록 — 자기 문서화 (필수)
+저장소 루트 `CLAUDE.md`(없으면 생성)에 리포·CI 사실을 **`eb:github` 블록**으로 기록한다. 재실행 시 이 블록만 통째로 교체(마커 유지):
+````markdown
+<!-- eb:github START -->
+## GitHub / CI
+- 리포: `<owner>/<name>` (`<PRIVATE|PUBLIC>`) · default `main`
+- CI: `.github/workflows/*.yml` — `data/*.csv` push마다 동기화/배포.
+- 시크릿/변수: `<등록한 것 나열>`.
+<!-- eb:github END -->
+````
+
+## 7. 완료
 보고: 리포 URL·가시성, (추가 시) eb 서브모듈, 등록한 시크릿/변수, CI 동기화 성공 여부. 키 파일은 **라이브 자격증명**이라 레포에 넣지 말 것(필요시 회전). 이후 `data/*.csv` push마다 CI가 시트·페이지를 자동 갱신한다.

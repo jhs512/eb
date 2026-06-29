@@ -52,7 +52,18 @@ gh run watch
 cp -r data web/data && (cd web && python -m http.server 8000)   # http://localhost:8000
 ```
 
-## 7. 완료
+## 7. CLAUDE.md 기록 — 자기 문서화 (필수)
+저장소 루트 `CLAUDE.md`(없으면 생성)에 이 배포의 운영 사실을 **`eb:pages` 블록**으로 기록한다. 재실행 시 이 블록만 통째로 교체(마커 유지):
+````markdown
+<!-- eb:pages START -->
+## Cloudflare Pages
+- 배포 URL: `https://<project>.pages.dev` · 프로젝트 `<name>`
+- 앱: `web/` (CSV → sql.js → cytoscape, **읽기 전용 뷰**)
+- CI 시크릿: `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`. `data/*.csv`·`web/` push마다 자동 배포.
+<!-- eb:pages END -->
+````
+
+## 8. 완료
 배포 URL(`https://<project>.pages.dev`), GitHub 시크릿/변수 이름, 자동 배포 트리거(데이터·프론트 변경)를 보고한다. API 토큰은 라이브 자격증명이니 안전 보관(필요시 Cloudflare에서 회전).
 
 ## 주의

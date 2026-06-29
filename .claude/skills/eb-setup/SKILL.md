@@ -44,7 +44,27 @@ python eb.py stats        # 노드 0, 엣지 0 이면 정상 부트스트랩
 python eb.py validate     # 문제 없음
 ```
 
-## 5. 선택 연동 셋업 — 사용자에게 물어본다 (필수)
+## 5. CLAUDE.md 시드 — 자기 문서화 (필수)
+저장소 루트 `CLAUDE.md` 를 만든다(이미 있으면 보존하고 블록만 갱신). 이후 모든 setup 계열 스킬은 이 파일에 **구분 주석 블록**으로 자기 사실을 남기고, 재실행 시 **그 블록만 통째로 교체**(마커 유지)해 멱등 갱신한다 — 마커 밖 내용은 건드리지 않는다.
+
+eb 핵심 블록을 적는다:
+````markdown
+<!-- eb:core START -->
+## eb (Excel Brain) 지식 그래프
+- `data/{nodes,edges,meta}.csv` 가 그래프(=단일 원천). 엔진 `eb.py`(stdlib only).
+- 추가 `eb-learn` · 조회 `eb-ask` · 정제 `eb-clean` · 건강 `eb-check` · 상태 `eb-status`.
+- 연동(선택): `eb-gcp`/`eb-sheets`(시트) · `eb-pages`(웹) · `eb-github`(레포+CI). 셋업하면 각 스킬이 이 파일에 자기 블록을 남긴다.
+<!-- eb:core END -->
+````
+`eb/` 가 git 서브모듈이면(=eb 엔진을 직접 개발) 개발 워크플로 블록도 추가한다:
+````markdown
+<!-- eb:dev START -->
+## eb 스킬 개발 워크플로
+eb 스킬은 `eb/.claude/skills/` 에서 고쳐 jhs512/eb 에 push한 뒤, 이 저장소의 `.claude/skills`·`.agents/skills` 로 동기화한다. 스킬 추가/삭제 시 `eb/tests/test_skills.py`·`eb/install.sh` 목록도 갱신.
+<!-- eb:dev END -->
+````
+
+## 6. 선택 연동 셋업 — 사용자에게 물어본다 (필수)
 부트스트랩·검증이 끝나면 **곧바로 사용자에게 물어본다**: 아래 선택 연동을 지금 같이 설정할지. 임의로 진행하지 말고, 원하는 것만 고르게 한 뒤 **의존 순서대로** 해당 스킬을 실행/안내한다. 모두 브라우저나 외부 인증이 필요하므로, 시작 전에 전제(브라우저 자동화·gh 인증)를 확인한다.
 
 - **eb-gcp** — Google Sheets 미러용 GCP 자격증명(구글 계정당 1회). `~/.config/eb/sheets-sync.env` 가 이미 있으면 건너뛸 수 있음. (eb-sheets 선행)
@@ -54,7 +74,7 @@ python eb.py validate     # 문제 없음
 
 권장 순서: **eb-gcp → eb-sheets → eb-pages → eb-github**. 아무것도 원치 않으면 건너뛴다.
 
-## 6. 다음
+## 7. 다음
 - 지식 추가는 `eb-learn`, 조회는 `eb-ask`, 정제는 `eb-clean`, 점검은 `eb-check`.
 - 엔진을 갱신하려면 `<REF>`를 올려 다시 이 절차를 돌린다(데이터 CSV는 보존).
 

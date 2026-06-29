@@ -57,5 +57,17 @@ SPREADSHEET_ID=… GOOGLE_APPLICATION_CREDENTIALS="$SA_KEY_PATH" python sync.py 
 ```
 방식은 **단순 overwrite**(CSV가 원천이라 증분 불필요). 시트를 손편집했다면 `--check` 로 드리프트 감지(역기록 없음 — CSV를 고쳐 다시 sync). CI를 설정했다면 `data/*.csv` push 마다 Action이 자동 동기화한다.
 
-## 7. 완료
+## 7. CLAUDE.md 기록 — 자기 문서화 (필수)
+저장소 루트 `CLAUDE.md`(없으면 생성; 보통 `/eb-setup` 이 이미 만듦)에 이 미러의 운영 사실을 **`eb:sheets` 블록**으로 기록한다. 재실행 시 이 블록만 통째로 교체(마커 유지):
+````markdown
+<!-- eb:sheets START -->
+## Google Sheets 미러
+- 시트: `<이름>` · SPREADSHEET_ID `<id>`
+- 서비스 계정(편집자): `<SA_EMAIL>`
+- 동기화: `SPREADSHEET_ID=<id> GOOGLE_APPLICATION_CREDENTIALS="$SA_KEY_PATH" python sync.py --data data`
+- CSV가 원천 · 시트는 단방향 뷰. 키는 레포 밖(`$SA_KEY_PATH`). CI는 secret `GOOGLE_SA_KEY` / var `SPREADSHEET_ID`.
+<!-- eb:sheets END -->
+````
+
+## 8. 완료
 연결된 것 보고: 스프레드시트 URL/id, 공유한 서비스 계정 이메일, (설정 시) `gh` secret/variable. CSV가 단일 원천이고 시트는 단방향 뷰임을 알린다. 키 파일(`SA_KEY_PATH`)은 라이브 자격증명이니 안전 보관(필요시 `/eb-gcp` 로 회전). 자격증명은 재사용 가능 — *다른* 저장소 미러는 이 스킬만 다시 실행하면 되고 `/eb-gcp` 는 불필요.

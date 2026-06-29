@@ -1,0 +1,35 @@
+name: Deploy Pages
+
+# 매번이 아니라 — 최초(수동 dispatch) + CSV 변경 + 프론트엔드(web/) 변경 + 이 워크플로 변경 시에만.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "data/**"
+      - "web/**"
+      - ".github/workflows/deploy-pages.yml"
+  workflow_dispatch: {}
+
+# 진행 중 배포가 있으면 최신만 남긴다.
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # CSV를 클라이언트가 fetch할 수 있게 web/data/ 로 복사(앱은 ./data/ 를 읽음)
+      - name: Stage CSV into web/data
+        run: |
+          mkdir -p web/data
+          cp data/*.csv web/data/
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy web --project-name=${{ vars.CF_PAGES_PROJECT }}

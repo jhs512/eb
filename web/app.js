@@ -205,6 +205,16 @@ function runSuggest(id) {
   out.sort((a, b) => b.sc - a.sc); const ids = out.map((x) => x.id);
   renderOrdered(ids); highlightInGraph([id, ...ids]); note(`${id} 연결 후보 ${ids.length}`);
 }
+function searchKeywords(q) {                        // 질문에서 단어 뽑아 OR 검색(0건 폴백용)
+  const toks = [];                                  // 영문/한글 경계로 분리 ("CTE가"→["CTE"])
+  for (const r of (q || "").split(/[^0-9A-Za-z가-힣]+/)) for (const p of (r.match(/[A-Za-z0-9]+|[가-힣]+/g) || [])) if (p.length >= 2 && !toks.includes(p)) toks.push(p);
+  if (!toks.length) { runText(q); return; }
+  toks.splice(8);
+  const conds = [], params = [];
+  for (const w of toks) { const lk = "%" + w.toLowerCase() + "%"; ["id", "title", "summary", "tags", "body"].forEach((c) => { conds.push(`lower(${c}) LIKE ?`); params.push(lk); }); }
+  const ids = rows(`SELECT id FROM nodes WHERE ${conds.join(" OR ")}`, params).map((r) => r.id);
+  renderList(new Set(ids)); highlightInGraph(ids); note(`키워드 검색: ${ids.length}건`);
+}
 function runQuery(input) {
   const s = (input || "").trim();
   if (!s) { runText(""); return; }
@@ -234,7 +244,7 @@ function stretchToAspect() {                       // 초기화면만: 그래프
   if (!bb.w || !bb.h || !c.width || !c.height) return;
   const gA = bb.w / bb.h, pA = c.width / c.height;
   if (pA <= gA * 1.1) return;                      // 패널이 충분히 더 넓을 때만
-  const factor = Math.min(pA / gA, 2.6), cx = (bb.x1 + bb.x2) / 2;
+  const factor = Math.min((pA / gA) * 0.85, 4.5), cx = (bb.x1 + bb.x2) / 2;   // 가로로 더 펼침(상한 4.5x)
   cy.nodes().forEach((n) => { const p = n.position(); n.position({ x: cx + (p.x - cx) * factor, y: p.y }); });
 }
 
@@ -336,10 +346,17 @@ async function chatAsk(q) {
 스키마: nodes(id,title,type,namespace,visibility,summary,confidence REAL,tags,body), edges(source,type,target,weight,note).
 노드(id | title | type):\n${nodeList}`;
     const r1 = await engine.chat.completions.create({ messages: [{ role: "system", content: sys1 }, ...hist, { role: "user", content: q }], temperature: 0 });
-    const query = (r1.choices[0].message.content || "").trim().split("\n")[0].replace(/^`+|`+$/g, "").trim();
+    let query = (r1.choices[0].message.content || "").trim().split("\n")[0].replace(/^`+|`+$/g, "").trim();
     $("q").value = query; runQuery(query);          // 검색창에도 반영 + 화면(목록·그래프) 갱신
-    const ctx = lastIds.slice(0, 8).map((id) => { const n = rows("SELECT title,type,summary FROM nodes WHERE id=?", [id])[0] || {}; return `- ${id}: ${n.title || ""} (${n.type || ""}) ${n.summary || ""}`; }).join("\n");
-    const sys2 = `너는 지식그래프 비서다. 아래 '검색 결과'와 이전 대화를 근거로 한국어로 2~4문장 답하라. 모르면 모른다고 하라.\n질의: ${query}\n검색 결과:\n${ctx || "(없음)"}`;
+    if (!lastIds.length) { searchKeywords(q); query = "(키워드) " + query; }   // 0건이면 질문 키워드로 재검색
+    const found = lastIds.slice(0, 8);
+    if (!found.length) {                              // 진짜 결과 없으면 환각 대신 솔직히
+      const msg = "관련 노드를 찾지 못했어요. 다른 키워드로 묻거나, 검색창에 직접 입력해 보세요.";
+      chatHistory.push({ role: "user", content: q }, { role: "assistant", content: msg });
+      thinking.innerHTML = esc(msg) + `<br><span style="opacity:.6;font-size:12px">↳ ${esc(query)} · 0건</span>`; return;
+    }
+    const ctx = found.map((id) => { const n = rows("SELECT title,type,summary FROM nodes WHERE id=?", [id])[0] || {}; return `- ${id}: ${n.title || ""} (${n.type || ""}) ${n.summary || ""}`; }).join("\n");
+    const sys2 = `너는 지식그래프 비서다. 아래 '검색 결과'에 있는 내용만 근거로 한국어로 2~4문장 답하라. 결과에 없는 사실은 절대 지어내지 마라.\n질의: ${query}\n검색 결과:\n${ctx}`;
     const r2 = await engine.chat.completions.create({ messages: [{ role: "system", content: sys2 }, ...hist, { role: "user", content: q }], temperature: 0.2 });
     const ans = (r2.choices[0].message.content || "").trim();
     chatHistory.push({ role: "user", content: q }, { role: "assistant", content: ans });   // 메모리 누적

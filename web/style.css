@@ -67,6 +67,7 @@ footer { padding: 7px 16px; border-top: 1px solid #e4e7ee; color: #6b7280; font-
 .bubble.sys { align-self: center; background: #fff7ed; color: #9a6700; font-size: 12px; border: 1px solid #fde6c8; }
 .bubble a { color: inherit; border-bottom: 1px dashed currentColor; cursor: pointer; }
 .chatform { display: flex; gap: 8px; padding: 10px; border-top: 1px solid #e4e7ee; }
+.chatmodel { padding: 7px 8px; border: 1px solid #cbd2dd; border-radius: 8px; font-size: 12.5px; color: #374151; background: #fff; max-width: 200px; }
 .chatform input { flex: 1; padding: 8px 11px; border: 1px solid #cbd2dd; border-radius: 8px; font-size: 14px; }
 .chatform button { padding: 8px 14px; border: none; border-radius: 8px; background: #1c2230; color: #fff; cursor: pointer; }
 .chatform button.ghost { background: #fff; color: #6b7280; border: 1px solid #cbd2dd; }

@@ -39,13 +39,32 @@ gh secret set CLOUDFLARE_ACCOUNT_ID         # 계정 ID
 gh variable set CF_PAGES_PROJECT --body <project-name>
 ```
 
+## 4.5 Basic Auth — 개인 그래프 보호 (기본 잠금)
+배포된 정적 사이트는 `data/*.csv` 를 그대로 서빙하므로, **개인 그래프(보통 private 노드 포함)는 인증으로 막는다.** `web/functions/_middleware.js`(Cloudflare Pages Function)가 모든 경로에 먼저 실행되어 **기본 fail-closed**다 — 잠금이 안 풀리면 503.
+- 잠금 풀기(권장): Pages 프로젝트 환경변수에 `BASIC_AUTH_PASS`(ASCII 비밀번호), 선택 `BASIC_AUTH_USER`(기본 `eb`) 설정.
+  ```bash
+  npx wrangler pages secret put BASIC_AUTH_PASS --project-name <project>   # 값은 사람이 입력
+  ```
+- 의도적으로 **공개**할 때만 `EB_PUBLIC=true` 환경변수로 옵트아웃.
+- private 노드를 아예 공개에서 빼고 싶으면 배포 전 CSV에서 제외하는 방식도 가능(별도).
+
+## 대안 가속 경로 — wrangler 로 바로 배포 (대시보드 불필요)
+API 토큰·대시보드 없이 한 번에 올리려면:
+```bash
+npx wrangler login                                  # 사람이 1회 OAuth 동의(브라우저 팝업)
+npx wrangler whoami                                 # Account ID 확인
+mkdir -p web/data && cp data/*.csv web/data/        # 앱이 ./data/ 를 읽음(배포 전 스테이징)
+npx wrangler pages deploy web --project-name <project> --branch main   # 없으면 프로젝트 자동 생성
+```
+`wrangler login` 후엔 자격증명이 로컬에 저장돼 이후 명령은 토큰 입력 없이 동작한다(CI 자동배포가 필요하면 §4 시크릿도 추가).
+
 ## 5. 최초 배포
 워크플로는 **최초·CSV변경·web/변경 시에만** 돈다. 최초 배포는 수동으로:
 ```bash
 gh workflow run deploy-pages.yml
 gh run watch
 ```
-이후엔 `data/*.csv`(지식 변경)나 `web/`(프론트 변경) push마다 자동 배포된다(다른 변경엔 안 돔).
+이후엔 `data/*.csv`(지식 변경)나 `web/`(프론트 변경) push마다 자동 배포된다(다른 변경엔 안 돔). 또는 위 wrangler 경로로 즉시 배포.
 
 ## 6. 로컬 미리보기 (선택)
 ```bash

@@ -1,11 +1,12 @@
-# web — 클라이언트 사이드 그래프 뷰어
+# web — 클라이언트 사이드 지식 뷰어
 
-서버 없이 **브라우저에서만** 동작하는 정적 앱. `data/*.csv`를 fetch → **sql.js(SQLite WASM)** 로 적재해 조회 → **cytoscape.js** 로 그린다. 빌드 없음(CDN 라이브러리).
+서버 없이 **브라우저에서만** 동작하는 정적 앱. `data/*.csv`를 fetch → **sql.js(SQLite WASM)** 로 적재해 조회 → 렌더한다. 빌드 없음(CDN 라이브러리).
 
-- `index.html` / `app.js` / `style.css` — 앱
-- 검색창: 입력하면 **클라이언트 사이드 SQLite**로 `title/summary/tags/body` 부분일치 조회 후 그래프에서 하이라이트
-- 노드 클릭: sql.js로 나가는/들어오는 엣지를 조회해 상세 패널 표시
-- 타입별 색, cose 레이아웃
+- `index.html` / `app.js` / `style.css`
+- **두 모드** (상단 `[문서 | 그래프]` 토글):
+  - **문서 본문 모드(기본)** — 중앙에 선택 노드의 **원문(body)** + 메타·요약·엣지 링크. 좌측 목록·검색으로 이동.
+  - **그래프 모드(선택)** — **cytoscape.js** 그래프. 노드 클릭 → 그 노드의 원문을 문서 모드로 연다.
+- 검색창: **클라이언트 사이드 SQLite**로 `title/summary/tags/body` 부분일치 조회 → 좌측 목록 필터.
 
 ## 로컬 미리보기
 ```bash

@@ -3,28 +3,38 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Excel Brain — 그래프 뷰어</title>
+  <title>Excel Brain — 지식 뷰어</title>
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
   <header>
     <h1>🧠 Excel Brain</h1>
     <span id="stats" class="stats">로딩 중…</span>
-    <input id="q" type="search" placeholder="검색 (title/summary/tags/body)… SQLite로 조회">
+    <div class="modes" role="tablist">
+      <button id="modeDoc" class="mode active" role="tab">문서</button>
+      <button id="modeGraph" class="mode" role="tab">그래프</button>
+    </div>
+    <input id="q" type="search" placeholder="검색… (SQLite로 조회)">
   </header>
+
   <main>
-    <div id="cy"></div>
-    <aside id="panel" class="panel hidden">
-      <button id="closePanel" class="close">×</button>
-      <div id="panelBody"></div>
+    <aside class="sidebar">
+      <ul id="list"></ul>
     </aside>
+
+    <section class="center">
+      <!-- 기본: 문서 본문 모드 (중앙에 원문) -->
+      <article id="doc" class="view"></article>
+      <!-- 선택: 그래프 모드 -->
+      <div id="cy" class="view hidden"></div>
+    </section>
   </main>
+
   <footer>
-    <span>전부 <b>클라이언트 사이드</b> — 브라우저가 CSV를 받아 <b>sql.js(SQLite WASM)</b>로 조회하고
-    <b>cytoscape.js</b>로 그린다. 서버 없음.</span>
+    <span>전부 <b>클라이언트 사이드</b> — 브라우저가 CSV를 받아 <b>sql.js(SQLite WASM)</b>로 조회.
+    중앙은 <b>원문</b>, 그래프는 토글로.</span>
   </footer>
 
-  <!-- CDN: 빌드 없음 -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.2/dist/cytoscape.min.js"></script>

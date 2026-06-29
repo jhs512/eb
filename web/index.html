@@ -10,10 +10,6 @@
   <header>
     <h1>🧠 Excel Brain</h1>
     <span id="stats" class="stats">로딩 중…</span>
-    <div class="modes" role="tablist">
-      <button id="modeDoc" class="mode active" role="tab">문서</button>
-      <button id="modeGraph" class="mode" role="tab">그래프</button>
-    </div>
     <input id="q" type="search" placeholder="검색… (SQLite로 조회)">
   </header>
 
@@ -22,17 +18,28 @@
       <ul id="list"></ul>
     </aside>
 
-    <section class="center">
-      <!-- 기본: 문서 본문 모드 (중앙에 원문) -->
-      <article id="doc" class="view"></article>
-      <!-- 선택: 그래프 모드 -->
-      <div id="cy" class="view hidden"></div>
+    <section class="center" id="center">
+      <!-- 문서 패널 (기본 펼침) -->
+      <section class="panel" id="docPanel">
+        <div class="phead"><span class="ptitle">📄 문서</span>
+          <button class="toggle" data-panel="doc" title="최소화/펼치기">▾</button></div>
+        <article id="doc" class="pbody"></article>
+      </section>
+
+      <div class="resizer" id="resizer" title="드래그로 크기조절"></div>
+
+      <!-- 그래프 패널 (기본 최소화) -->
+      <section class="panel collapsed" id="graphPanel">
+        <div class="phead"><span class="ptitle">🕸 그래프</span>
+          <button class="toggle" data-panel="graph" title="최소화/펼치기">▸</button></div>
+        <div id="cy" class="pbody"></div>
+      </section>
     </section>
   </main>
 
   <footer>
     <span>전부 <b>클라이언트 사이드</b> — 브라우저가 CSV를 받아 <b>sql.js(SQLite WASM)</b>로 조회.
-    중앙은 <b>원문</b>, 그래프는 토글로.</span>
+    문서·그래프 패널은 각각 <b>접기·드래그 크기조절</b>.</span>
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>

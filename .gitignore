@@ -16,6 +16,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# 로컬 SQLite 산출물(필요 시)
+# 로컬 SQLite 산출물 / 자동 캐시(파생물 — 절대 커밋 금지)
 *.db
 *.sqlite
+.eb-cache.sqlite
+**/.eb-cache.sqlite

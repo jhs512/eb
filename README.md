@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://github.com/jhs512/eb/actions/workflows/tests.yml"><img src="https://github.com/jhs512/eb/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
-  <img src="https://img.shields.io/badge/Version-0.5.1-brightgreen.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Version-0.6.0-brightgreen.svg" alt="Version">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/Python-3.10+-3776ab.svg" alt="Python">
   <img src="https://img.shields.io/badge/Deps-stdlib_only_(core)-orange.svg" alt="stdlib only">
@@ -100,7 +100,7 @@ python ingest.py talk.mp3                        # 음성/영상 → whisper 전
 
 ### 그래프 엔진 — CSV를 DB로 (`eb.py`)
 
-`eb.py`는 매 호출마다 3개의 CSV를 **인메모리 SQLite**(파이썬 표준 라이브러리 `sqlite3`, 설치 불필요)로 적재한 뒤, **재귀 CTE(`WITH RECURSIVE`)** 와 표준 라이브러리만으로 그래프 연산을 한다. **SQLite는 모든 조회의 substrate라 항상 쓰이며 선택이 아니다** — 아래 "파일 SQLite 캐시"만 선택이다(인메모리 적재를 매번 반복하지 않으려는 성능 캐시).
+`eb.py`는 3개의 CSV를 SQLite로 올린 뒤, **재귀 CTE(`WITH RECURSIVE`)** 와 표준 라이브러리만으로 그래프 연산을 한다(SQLite는 파이썬 표준 라이브러리라 설치 불필요). **캐시는 자동**이다 — `data/.eb-cache.sqlite` 가 있고 CSV와 일치하면 재사용하고, 없거나 CSV가 바뀌면 다시 만든다(설정·플래그 없음). CSV가 단일 원천이고 캐시는 파생물이라 `.gitignore` 대상이다.
 
 ```bash
 # 읽기 / 조회
@@ -137,17 +137,9 @@ python eb.py merge old-dup-id canonical-id           # 중복 병합(from 엣지
 - **path**: 기본은 무가중 BFS(홉 최소). `--weighted` 면 `weight`를 비용으로 본 다익스트라.
 - **add-node/add-edge**: 빈/중복 id, 없는 노드 참조를 거부(`--allow-missing`으로 우회).
 
-### 대규모 — 파일 SQLite 캐시 (성능 옵션, 선택)
+### 캐시 (자동 — 설정 불필요)
 
-기본은 매 호출마다 CSV를 인메모리 SQLite로 적재한다(작은~중간 그래프에선 무시할 만큼 빠름). 노드/엣지가 아주 많아 **매번 CSV를 다시 파싱하는 비용**이 커지면, 파일 SQLite로 한 번 빌드해 두고 재사용할 수 있다.
-
-```bash
-python eb.py --db graph.sqlite build-db        # CSV -> 파일 SQLite로 적재(인덱스 포함)
-python eb.py --db graph.sqlite stats           # CSV보다 최신이면 재적재 없이 재사용
-python eb.py --db graph.sqlite --rebuild stats # CSV 변경분을 강제 재적재
-```
-
-**왜 선택인가**: 이건 *조회를 가능하게* 하는 게 아니라 *반복 적재를 빠르게* 하는 캐시일 뿐이다(SQLite 자체는 인메모리로 항상 쓰인다). CSV가 여전히 단일 원천이고, 파일 DB는 CSV보다 최신이면 재적재를 건너뛰는 staleness 검사로 동기화된다 — 안 쓰면 매번 새로 적재할 뿐 결과는 동일하다.
+조회는 항상 SQLite로 처리되며, **캐시는 자동**이다. 첫 조회 때 `data/.eb-cache.sqlite` 를 만들고, 이후엔 CSV가 그대로면 재사용, **CSV가 바뀌면(크기·나노초 mtime 시그니처 불일치) 자동 재생성**한다. 별도 명령·플래그가 없다. 캐시 디렉토리가 읽기 전용이면 조용히 인메모리로 폴백한다(실패하지 않음). CSV가 단일 원천이고 캐시는 파생물이라 `.gitignore` 대상이다.
 
 ### 선택: Google 스프레드시트 동기화 (`sync.py`)
 

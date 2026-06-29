@@ -58,6 +58,9 @@ def _read_csv(path: Path) -> list[dict]:
         return list(csv.DictReader(f))
 
 
+CACHE_FILE = ".eb-cache.sqlite"   # data_dir 안의 자동 캐시(.gitignore 대상)
+
+
 def _has_tables(conn) -> bool:
     rows = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('nodes','edges')"
@@ -65,32 +68,31 @@ def _has_tables(conn) -> bool:
     return len(rows) == 2
 
 
-def _db_is_fresh(db_path: str, data_dir: str) -> bool:
-    """파일 DB가 존재하고 모든 CSV보다 최신이면 True(재적재 불필요)."""
-    p = Path(db_path)
-    if not p.exists() or p.stat().st_size == 0:
-        return False
-    db_m = p.stat().st_mtime
-    base = Path(data_dir)
+def _source_sig(base: Path) -> str:
+    """CSV 원천의 시그니처(크기 + 나노초 mtime). 내용이 바뀌면 달라진다."""
+    parts = []
     for fn in (NODES_FILE, EDGES_FILE, META_FILE):
         f = base / fn
-        if f.exists() and f.stat().st_mtime > db_m:
-            return False
-    return True
+        if f.exists():
+            st = f.stat()
+            parts.append(f"{fn}:{st.st_size}:{st.st_mtime_ns}")
+        else:
+            parts.append(f"{fn}:-")
+    return "|".join(parts)
 
 
-def load_db(data_dir: str = "data", db_path: str = ":memory:",
-            rebuild: bool = True) -> sqlite3.Connection:
-    """3개의 CSV를 SQLite로 적재하고 연결을 반환한다.
+def _stored_sig(conn) -> str:
+    try:
+        row = conn.execute("SELECT v FROM _eb_meta WHERE k='sig'").fetchone()
+        return row["v"] if row else ""
+    except sqlite3.Error:
+        return ""
 
-    db_path 가 파일이고 rebuild=False 이며 이미 테이블이 있으면, CSV 재적재 없이
-    그대로 연다(대규모 그래프에서 매 호출마다 CSV를 다시 읽지 않기 위함).
-    CSV가 원천이므로 기본은 rebuild=True.
-    """
+
+def _build_db(data_dir: str, db_path: str) -> sqlite3.Connection:
+    """CSV 3개를 db_path(파일 또는 :memory:) SQLite로 적재한다."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    if not rebuild and _has_tables(conn):
-        return conn
     cur = conn.cursor()
     cur.executescript(
         """
@@ -105,7 +107,6 @@ def load_db(data_dir: str = "data", db_path: str = ":memory:",
         );
         """
     )
-
     base = Path(data_dir)
     for r in _read_csv(base / NODES_FILE):
         cur.execute(
@@ -133,6 +134,39 @@ def load_db(data_dir: str = "data", db_path: str = ":memory:",
     cur.execute("CREATE INDEX i_ntype ON nodes(type)")
     conn.commit()
     return conn
+
+
+def load_db(data_dir: str = "data") -> sqlite3.Connection:
+    """CSV 3개를 SQLite로 올려 연결을 반환한다.
+
+    캐시는 **자동**이다(사용자 설정 불필요): data_dir 안의 `.eb-cache.sqlite` 가
+    있고 CSV 시그니처(크기+나노초 mtime)와 일치하면 그대로 재사용하고, 없거나
+    CSV가 바뀌었으면 새로 만든다. CSV가 단일 원천이며 캐시는 파생물일 뿐이다.
+    캐시 디렉토리가 읽기 전용이면 인메모리로 폴백한다(실패하지 않는다).
+    """
+    base = Path(data_dir)
+    sig = _source_sig(base)
+    cache = base / CACHE_FILE
+    if cache.exists() and cache.stat().st_size > 0:
+        try:
+            conn = sqlite3.connect(str(cache))
+            conn.row_factory = sqlite3.Row
+            if _has_tables(conn) and _stored_sig(conn) == sig:
+                return conn          # 캐시 적중
+            conn.close()
+        except sqlite3.Error:
+            pass
+    # 캐시 없음/오래됨/손상 → 재생성(쓰기 가능하면 파일, 아니면 인메모리)
+    try:
+        if cache.exists():
+            cache.unlink()
+        conn = _build_db(data_dir, str(cache))
+        conn.execute("CREATE TABLE IF NOT EXISTS _eb_meta(k TEXT PRIMARY KEY, v TEXT)")
+        conn.execute("INSERT OR REPLACE INTO _eb_meta(k,v) VALUES('sig',?)", (sig,))
+        conn.commit()
+        return conn
+    except (sqlite3.Error, OSError):
+        return _build_db(data_dir, ":memory:")
 
 
 def _to_float(v):
@@ -728,10 +762,6 @@ def main(argv=None):
 
     p = argparse.ArgumentParser(prog="eb", description="Excel Brain — CSV 그래프 엔진")
     p.add_argument("--data", default="data", help="CSV 디렉토리 (기본: data)")
-    p.add_argument("--db", default=None,
-                   help="파일 SQLite 경로(대규모용 캐시). 생략 시 인메모리")
-    p.add_argument("--rebuild", action="store_true",
-                   help="--db 사용 시 CSV에서 강제 재적재(기본은 CSV보다 최신이면 재사용)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("stats", help="요약 통계")
@@ -743,7 +773,6 @@ def main(argv=None):
     sp = sub.add_parser("health", help="건강도 점검 + 리뷰 큐(저신뢰/고아/끊긴 엣지)")
     sp.add_argument("--confidence", type=float, default=0.6,
                     help="이 값 미만(또는 없음)인 노드를 리뷰 큐에 (기본 0.6)")
-    sub.add_parser("build-db", help="CSV를 파일 SQLite로 적재(대규모용, --db 필요)")
 
     sp = sub.add_parser("search", help="노드 검색(title/summary/tags/body 부분일치)")
     sp.add_argument("query")
@@ -842,21 +871,7 @@ def main(argv=None):
               f"중복 {r['dropped_dups']}개 제거)")
         return 0
 
-    if args.cmd == "build-db" and not args.db:
-        print("✗ build-db 는 --db PATH 가 필요합니다")
-        return 1
-
-    if args.db:
-        force = args.rebuild or args.cmd == "build-db"
-        rebuild = force or not _db_is_fresh(args.db, args.data)
-        conn = load_db(args.data, args.db, rebuild=rebuild)
-        if args.cmd == "build-db":
-            s = stats(conn)
-            action = "재적재" if rebuild else "재사용(최신)"
-            print(f"✓ {args.db} {action}: 노드 {s['nodes']}, 엣지 {s['edges']}")
-            return 0
-    else:
-        conn = load_db(args.data)
+    conn = load_db(args.data)   # 캐시는 자동(있고 최신이면 재사용, 아니면 재생성)
 
     if args.cmd == "stats":
         s = stats(conn)
@@ -888,6 +903,7 @@ def main(argv=None):
             print(f"✗ {len(issues)}건:")
             for i in issues:
                 print(f"  - {i}")
+            conn.close()
             return 1
 
     elif args.cmd == "export":
@@ -933,6 +949,7 @@ def main(argv=None):
                                          args.default_weight)
             if res is None:
                 print("(경로 없음)")
+                conn.close()
                 return 1
             path, cost = res
             print(" -> ".join(path)
@@ -941,6 +958,7 @@ def main(argv=None):
             path = shortest_path(conn, args.src, args.dst, args.direction)
             if path is None:
                 print("(경로 없음)")
+                conn.close()
                 return 1
             print(" -> ".join(path) + f"   (홉 {len(path) - 1})")
 
@@ -978,6 +996,7 @@ def main(argv=None):
         for x in dd["per_node"][:args.top]:
             print(f"  {x['total']:>3}  {x['id']}  (in={x['in']} out={x['out']})")
 
+    conn.close()
     return 0
 
 

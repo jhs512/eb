@@ -1,9 +1,11 @@
 /* Excel Brain 지식 뷰어 — 전부 클라이언트 사이드.
-   문서·그래프 두 패널을 동시에. 각 패널은 접기(최소화)·드래그 크기조절.
+   문서·그래프 두 패널: 상하/좌우 분할, 각 패널 접기·드래그 크기조절,
+   그래프에서 현재 노드 하이라이트, 패널 상태 localStorage 기억.
    브라우저가 CSV를 받아 sql.js(SQLite WASM)로 조회한다. */
 "use strict";
 
-const DATA_BASES = ["./data/", "../data/"];   // 배포: web/data, 로컬(루트 서빙): ../data 폴백
+const DATA_BASES = ["./data/", "../data/"];
+const LS_KEY = "eb-view-state-v1";
 const TYPE_COLORS = {
   pillar: "#7c3aed", concept: "#2563eb", fact: "#059669",
   decision: "#d97706", question: "#dc2626", playbook: "#0891b2",
@@ -12,10 +14,12 @@ const TYPE_COLORS = {
 const colorFor = (t) => TYPE_COLORS[t] || "#64748b";
 const esc = (s) => (s == null ? "" : String(s).replace(/[&<>]/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])));
-
-let db = null, cy = null, current = null, allNodes = [], rawNodes = [], rawEdges = [];
 const $ = (id) => document.getElementById(id);
 
+let db = null, cy = null, current = null, allNodes = [], rawNodes = [], rawEdges = [];
+let ratio = 0.55;   // 문서 패널 비중(둘 다 펼쳤을 때)
+
+/* ---- 로드/DB ---- */
 async function fetchCSV(name) {
   for (const base of DATA_BASES) {
     try { const r = await fetch(base + name); if (r.ok)
@@ -48,7 +52,20 @@ function buildDb(SQL, nodes, edges) {
   return d;
 }
 
-/* ---- 좌측 목록 + 중앙 원문 ---- */
+/* ---- 상태 기억 ---- */
+function saveState() {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify({
+      docCollapsed: $("docPanel").classList.contains("collapsed"),
+      graphCollapsed: $("graphPanel").classList.contains("collapsed"),
+      horizontal: $("center").classList.contains("horizontal"),
+      ratio, current,
+    }));
+  } catch (e) { /* 사파리 프라이빗 등 무시 */ }
+}
+function loadState() { try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch (e) { return {}; } }
+
+/* ---- 목록 + 원문 ---- */
 function renderList(filterIds) {
   const ul = $("list");
   const items = allNodes.filter((n) => !filterIds || filterIds.has(n.id));
@@ -83,17 +100,26 @@ function renderDoc(id) {
     a.addEventListener("click", () => select(a.dataset.id)));
   doc.scrollTop = 0;
 }
+function markCurrent() {
+  if (!cy) return;
+  cy.nodes().removeClass("current");
+  const el = cy.getElementById(current);
+  if (el) {
+    el.addClass("current");
+    if (!$("graphPanel").classList.contains("collapsed"))
+      cy.animate({ center: { eles: el }, zoom: 1.3 }, { duration: 200 });
+  }
+}
 function select(id) {
   current = id;
   renderDoc(id);
   document.querySelectorAll("#list li").forEach((li) =>
     li.classList.toggle("sel", li.dataset.id === id));
-  if (cy && !$("graphPanel").classList.contains("collapsed")) {
-    const el = cy.getElementById(id); if (el) cy.animate({ center: { eles: el }, zoom: 1.3 }, { duration: 200 });
-  }
+  markCurrent();
+  saveState();
 }
 
-/* ---- 그래프 패널(lazy) ---- */
+/* ---- 그래프(lazy) ---- */
 function buildGraph() {
   const ids = new Set(rawNodes.map((n) => (n.id || "").trim()).filter(Boolean));
   const els = [];
@@ -106,44 +132,56 @@ function buildGraph() {
       { selector: "node", style: { "background-color": (n) => colorFor(n.data("type")),
           "label": "data(label)", "font-size": 10, "text-wrap": "wrap", "text-max-width": 90,
           "width": 20, "height": 20, "color": "#1c2230" } },
+      { selector: "node.current", style: { "width": 30, "height": 30,
+          "border-width": 4, "border-color": "#f59e0b", "font-weight": "bold", "z-index": 99 } },
       { selector: "edge", style: { "width": 1.4, "line-color": "#c7cdd8",
           "target-arrow-color": "#c7cdd8", "target-arrow-shape": "triangle",
           "curve-style": "bezier", "label": "data(label)", "font-size": 8, "color": "#9aa3b2" } },
     ],
     layout: { name: "cose", animate: false, padding: 30 },
   });
-  cy.on("tap", "node", (ev) => select(ev.target.id()));   // 두 패널 동시 — 모드 전환 없음
+  cy.on("tap", "node", (ev) => select(ev.target.id()));
+  markCurrent();
 }
 
-/* ---- 패널 접기/크기조절 ---- */
-function fitGraph() { if (cy && !$("graphPanel").classList.contains("collapsed")) requestAnimationFrame(() => { cy.resize(); cy.fit(undefined, 40); }); }
-function syncResizer() {
-  const collapsed = $("docPanel").classList.contains("collapsed") || $("graphPanel").classList.contains("collapsed");
-  $("resizer").classList.toggle("hidden", collapsed);
+/* ---- 패널 접기/분할/크기조절 ---- */
+function bothExpanded() { return !$("docPanel").classList.contains("collapsed") && !$("graphPanel").classList.contains("collapsed"); }
+function setSplit(r) {
+  ratio = Math.max(0.15, Math.min(0.85, r));
+  if (bothExpanded()) { $("docPanel").style.flex = `${ratio} 1 0`; $("graphPanel").style.flex = `${1 - ratio} 1 0`; }
 }
+function applyFlex() {
+  if (bothExpanded()) setSplit(ratio);
+  else { $("docPanel").style.flex = ""; $("graphPanel").style.flex = ""; }
+}
+function fitGraph() { if (cy && !$("graphPanel").classList.contains("collapsed")) requestAnimationFrame(() => { cy.resize(); cy.fit(undefined, 40); }); }
+function syncResizer() { $("resizer").classList.toggle("hidden", !bothExpanded()); }
 function setArrows() {
-  for (const p of ["docPanel", "graphPanel"]) {
-    const el = $(p), btn = el.querySelector(".toggle");
-    btn.textContent = el.classList.contains("collapsed") ? "▸" : "▾";
-  }
+  for (const p of ["docPanel", "graphPanel"])
+    $(p).querySelector(".toggle").textContent = $(p).classList.contains("collapsed") ? "▸" : "▾";
 }
 function togglePanel(which) {
   const el = which === "doc" ? $("docPanel") : $("graphPanel");
   el.classList.toggle("collapsed");
-  $("docPanel").style.flex = ""; $("graphPanel").style.flex = "";   // 리사이즈 초기화
-  if (which === "graph" && !el.classList.contains("collapsed")) { if (!cy) buildGraph(); fitGraph(); }
-  setArrows(); syncResizer();
+  if (which === "graph" && !el.classList.contains("collapsed") && !cy) buildGraph();
+  applyFlex(); setArrows(); syncResizer(); fitGraph(); saveState();
+}
+function toggleLayout() {
+  const horiz = $("center").classList.toggle("horizontal");
+  $("layout").textContent = horiz ? "⬌ 좌우" : "⬍ 상하";
+  applyFlex(); fitGraph(); saveState();
 }
 function initResize() {
-  const center = $("center"), doc = $("docPanel"), graph = $("graphPanel");
+  const center = $("center");
   const move = (e) => {
     const rect = center.getBoundingClientRect();
-    let r = (e.clientY - rect.top) / rect.height;
-    r = Math.max(0.15, Math.min(0.85, r));
-    doc.style.flex = `${r} 1 0`; graph.style.flex = `${1 - r} 1 0`;
-    if (cy && !graph.classList.contains("collapsed")) cy.resize();
+    const r = center.classList.contains("horizontal")
+      ? (e.clientX - rect.left) / rect.width
+      : (e.clientY - rect.top) / rect.height;
+    setSplit(r);
+    if (cy && !$("graphPanel").classList.contains("collapsed")) cy.resize();
   };
-  const up = () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); fitGraph(); };
+  const up = () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); fitGraph(); saveState(); };
   $("resizer").addEventListener("mousedown", (e) => {
     if ($("resizer").classList.contains("hidden")) return;
     e.preventDefault(); document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
@@ -167,13 +205,26 @@ async function main() {
     const nc = rows("SELECT COUNT(*) c FROM nodes")[0].c, ec = rows("SELECT COUNT(*) c FROM edges")[0].c;
     $("stats").textContent = `노드 ${nc} · 엣지 ${ec}`;
 
+    // 저장된 패널 상태 복원
+    const st = loadState();
+    if (st.horizontal) $("center").classList.add("horizontal");
+    $("layout").textContent = $("center").classList.contains("horizontal") ? "⬌ 좌우" : "⬍ 상하";
+    if (typeof st.ratio === "number") ratio = st.ratio;
+    if (st.docCollapsed) $("docPanel").classList.add("collapsed");
+    if (st.graphCollapsed === false) { $("graphPanel").classList.remove("collapsed"); buildGraph(); }
+
     renderList(null);
-    const first = (rows("SELECT id FROM nodes WHERE type='pillar' ORDER BY id LIMIT 1")[0] || allNodes[0] || {}).id;
-    if (first) select(first); else $("doc").innerHTML = '<p class="placeholder">노드가 없습니다.</p>';
+    const firstPillar = (rows("SELECT id FROM nodes WHERE type='pillar' ORDER BY id LIMIT 1")[0] || {}).id;
+    const want = (st.current && allNodes.some((n) => n.id === st.current))
+      ? st.current : (firstPillar || (allNodes[0] || {}).id);
+    if (want) select(want); else $("doc").innerHTML = '<p class="placeholder">노드가 없습니다.</p>';
+
+    setArrows(); syncResizer(); applyFlex(); fitGraph();
 
     $("docPanel").querySelector(".phead").addEventListener("click", () => togglePanel("doc"));
     $("graphPanel").querySelector(".phead").addEventListener("click", () => togglePanel("graph"));
-    initResize(); setArrows(); syncResizer();
+    $("layout").addEventListener("click", toggleLayout);
+    initResize();
     let timer;
     $("q").addEventListener("input", (ev) => { clearTimeout(timer); timer = setTimeout(() => runSearch(ev.target.value), 150); });
     window.addEventListener("resize", fitGraph);

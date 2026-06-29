@@ -10,40 +10,57 @@
   <header>
     <h1>🧠 Excel Brain</h1>
     <span id="stats" class="stats">로딩 중…</span>
-    <button id="layout" class="layout" title="상하/좌우 분할 전환">⬍ 상하</button>
-    <button id="ai" class="layout" title="WebLLM 자연어 검색(선택, CDN)">🤖 AI 꺼짐</button>
+    <button id="layout" class="hbtn" title="상하/좌우 분할 전환">⬍ 상하</button>
+    <button id="help" class="hbtn" title="검색 표현식 사용법">? 사용법</button>
     <input id="q" type="search"
-      placeholder="텍스트 · neighbors id --depth 2 · SELECT … · (AI켜면) 자연어 질문 — Enter">
+      placeholder="검색어 입력 · 또는 neighbors id --depth 2 / SELECT … (Enter)">
   </header>
 
   <main>
-    <aside class="sidebar">
-      <ul id="list"></ul>
-    </aside>
+    <aside class="sidebar"><ul id="list"></ul></aside>
 
     <section class="center" id="center">
-      <!-- 문서 패널 (기본 펼침) -->
       <section class="panel" id="docPanel">
-        <div class="phead"><span class="ptitle">📄 문서</span>
-          <button class="toggle" data-panel="doc" title="최소화/펼치기">▾</button></div>
+        <div class="phead"><span class="ptitle">📄 문서</span><span class="hint">Alt+1</span>
+          <button class="toggle" title="최소화/펼치기">▾</button></div>
         <article id="doc" class="pbody"></article>
       </section>
 
-      <div class="resizer" id="resizer" title="드래그로 크기조절"></div>
+      <div class="resizer" data-between="docPanel,graphPanel"></div>
 
-      <!-- 그래프 패널 (기본 최소화) -->
       <section class="panel collapsed" id="graphPanel">
-        <div class="phead"><span class="ptitle">🕸 그래프</span>
-          <button class="toggle" data-panel="graph" title="최소화/펼치기">▸</button></div>
+        <div class="phead"><span class="ptitle">🕸 그래프</span><span class="hint">Alt+2</span>
+          <button class="toggle" title="최소화/펼치기">▸</button></div>
         <div id="cy" class="pbody"></div>
+      </section>
+
+      <div class="resizer" data-between="graphPanel,chatPanel"></div>
+
+      <section class="panel collapsed" id="chatPanel">
+        <div class="phead"><span class="ptitle">💬 채팅</span><span class="hint">Alt+3</span>
+          <button class="toggle" title="최소화/펼치기">▸</button></div>
+        <div class="pbody chatbody">
+          <div id="chatlog" class="chatlog"></div>
+          <form id="chatform" class="chatform">
+            <input id="chatin" type="text" placeholder="자연어로 물어보세요 — 예: redis와 동시성이 어떻게 엮이지?">
+            <button type="submit">전송</button>
+          </form>
+        </div>
       </section>
     </section>
   </main>
 
-  <footer>
-    <span>전부 <b>클라이언트 사이드</b> — 브라우저가 CSV를 받아 <b>sql.js(SQLite WASM)</b>로 조회.
-    문서·그래프 패널은 각각 <b>접기·드래그 크기조절</b>.</span>
-  </footer>
+  <footer><span>전부 <b>클라이언트 사이드</b>(sql.js) — 검색은 텍스트/명령/SQL, 채팅은 자연어→그래프 탐색.</span></footer>
+
+  <!-- 사용법 모달 -->
+  <div id="helpModal" class="modal hidden">
+    <div class="modalbox">
+      <button id="helpClose" class="modalclose">×</button>
+      <h2>검색 표현식 사용법</h2>
+      <p class="hmsg">검색창에 아래처럼 입력하세요. <b>그냥 단어만 쳐도 검색</b>됩니다. 예시를 클릭하면 검색창에 채워집니다.</p>
+      <table id="helpTable"></table>
+    </div>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>

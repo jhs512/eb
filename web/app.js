@@ -15,7 +15,7 @@ const esc = (s) => (s == null ? "" : String(s).replace(/[&<>]/g, (c) => ({ "&": 
 const $ = (id) => document.getElementById(id);
 
 let db = null, cy = null, current = null, allNodes = [], rawNodes = [], rawEdges = [];
-let grows = { docPanel: 1, graphPanel: 1, chatPanel: 1 }, lastIds = [];
+let grows = { docPanel: 1, graphPanel: 1.5, chatPanel: 1 }, lastIds = [];
 let llm = null, llmTried = false, chatHistory = [];   // 대화 메모리(후속 질문용)
 
 const HELP = [
@@ -66,7 +66,7 @@ function loadState() { try { return JSON.parse(localStorage.getItem(LS_KEY)) || 
 /* ---- 목록 + 원문 ---- */
 function note(m) { $("stats").textContent = m; }
 function liHtml(n) { return `<li data-id="${esc(n.id)}" class="${n.id === current ? "sel" : ""}">${esc(n.title || n.id)}<br><span class="t">${esc(n.type || "")}</span></li>`; }
-function bindList() { $("list").querySelectorAll("li[data-id]").forEach((li) => li.addEventListener("click", () => select(li.dataset.id))); }
+function bindList() { $("list").querySelectorAll("li[data-id]").forEach((li) => li.addEventListener("click", () => select(li.dataset.id, true))); }
 function renderList(filterIds) {
   const items = allNodes.filter((n) => !filterIds || filterIds.has(n.id));
   lastIds = items.map((n) => n.id);
@@ -84,26 +84,34 @@ function renderDoc(id) {
   const inc = rows("SELECT type,source FROM edges WHERE target=? ORDER BY source", [id]);
   const link = (x) => `<a data-id="${esc(x)}">${esc(x)}</a>`;
   const el = (a, d) => a.length ? a.map((e) => `<li><span class="etype">${esc(e.type)}</span> ${d === "out" ? "→ " + link(e.target) : link(e.source) + " →"}</li>`).join("") : '<li class="placeholder">(없음)</li>';
-  doc.innerHTML = `<h2>${esc(n.title || n.id)}</h2>
-     <div class="meta"><span class="badge" style="background:${colorFor(n.type)}">${esc(n.type || "?")}</span>
-       <code>${esc(n.id)}</code>${n.namespace ? " · " + esc(n.namespace) : ""} · 신뢰도 ${n.confidence ?? "-"}${n.tags ? " · " + esc(n.tags) : ""}</div>
-     ${n.summary ? `<div class="summary">${esc(n.summary)}</div>` : ""}
-     <div class="body">${esc(n.body) || '<span class="placeholder">(본문 없음)</span>'}</div>
-     <h3>나가는 엣지 (${out.length})</h3><ul class="edges">${el(out, "out")}</ul>
-     <h3>들어오는 엣지 / 백링크 (${inc.length})</h3><ul class="edges">${el(inc, "in")}</ul>`;
-  doc.querySelectorAll("a[data-id]").forEach((a) => a.addEventListener("click", () => select(a.dataset.id)));
+  doc.innerHTML = `<div class="docwrap">
+     <div class="doc-main">
+       <h2>${esc(n.title || n.id)}</h2>
+       <div class="meta"><span class="badge" style="background:${colorFor(n.type)}">${esc(n.type || "?")}</span>
+         <code>${esc(n.id)}</code>${n.namespace ? " · " + esc(n.namespace) : ""} · 신뢰도 ${n.confidence ?? "-"}${n.tags ? " · " + esc(n.tags) : ""}</div>
+       ${n.summary ? `<div class="summary">${esc(n.summary)}</div>` : ""}
+       <div class="body">${esc(n.body) || '<span class="placeholder">(본문 없음)</span>'}</div>
+     </div>
+     <aside class="doc-edges">
+       <h3>나가는 엣지 (${out.length})</h3><ul class="edges">${el(out, "out")}</ul>
+       <h3>들어오는 엣지 / 백링크 (${inc.length})</h3><ul class="edges">${el(inc, "in")}</ul>
+     </aside>
+   </div>`;
+  doc.querySelectorAll("a[data-id]").forEach((a) => a.addEventListener("click", () => select(a.dataset.id, true)));
   doc.scrollTop = 0;
 }
-function markCurrent() {
+function markCurrent() {                            // 하이라이트(클래스)만 — 카메라 이동 없음
   if (!cy) return;
   cy.nodes().removeClass("current");
   const el = cy.getElementById(current);
-  if (el && el.length) { el.addClass("current"); if (!$("graphPanel").classList.contains("collapsed")) cy.animate({ center: { eles: el }, zoom: 1.3 }, { duration: 200 }); }
+  if (el && el.length) el.addClass("current");
 }
-function select(id) {
+function select(id, focus) {                        // focus=true(사용자 클릭)일 때만 그래프 카메라 이동
   current = id; renderDoc(id);
   document.querySelectorAll("#list li").forEach((li) => li.classList.toggle("sel", li.dataset.id === id));
-  markCurrent(); saveState();
+  markCurrent();
+  if (focus && cy && isOpen("graphPanel")) { const el = cy.getElementById(id); if (el && el.length) cy.animate({ center: { eles: el }, zoom: 1.3 }, { duration: 200 }); }
+  saveState();
 }
 function highlightInGraph(ids) {
   if (!cy) return; const set = new Set(ids);
@@ -214,15 +222,26 @@ function buildGraph() {
     { selector: "node.qhit", style: { "border-width": 3, "border-color": "#2563eb" } },
     { selector: ".dim", style: { "opacity": 0.12 } },
     { selector: "edge", style: { "width": 1.4, "line-color": "#c7cdd8", "target-arrow-color": "#c7cdd8", "target-arrow-shape": "triangle", "curve-style": "bezier", "label": "data(label)", "font-size": 8, "color": "#9aa3b2" } },
-  ], layout: { name: "cose", animate: false, padding: 30 } });
-  cy.on("tap", "node", (ev) => select(ev.target.id()));
-  markCurrent();
+  ], layout: { name: "grid", rows: 1 } });
+  cy.on("tap", "node", (ev) => select(ev.target.id(), true));
+  const l = cy.layout({ name: "cose", animate: false, padding: 24, idealEdgeLength: 110, nodeRepulsion: 12000, nodeOverlap: 24, gravity: 0.25, componentSpacing: 120 });
+  l.one("layoutstop", () => requestAnimationFrame(() => { stretchToAspect(); fitGraph(); markCurrent(); }));   // 초기 1회: 패널 크기 적용 후 가로 채우기
+  l.run();
+}
+function stretchToAspect() {                       // 초기화면만: 그래프를 패널 가로비율에 맞게 늘림(왜곡 상한)
+  if (!cy) return;
+  const bb = cy.elements().boundingBox(), c = cy.container().getBoundingClientRect();
+  if (!bb.w || !bb.h || !c.width || !c.height) return;
+  const gA = bb.w / bb.h, pA = c.width / c.height;
+  if (pA <= gA * 1.1) return;                      // 패널이 충분히 더 넓을 때만
+  const factor = Math.min(pA / gA, 2.6), cx = (bb.x1 + bb.x2) / 2;
+  cy.nodes().forEach((n) => { const p = n.position(); n.position({ x: cx + (p.x - cx) * factor, y: p.y }); });
 }
 
 /* ---- 패널: 접기/분할/크기조절 ---- */
 function isOpen(id) { return !$(id).classList.contains("collapsed"); }
 function applyFlex() { for (const id of PANELS) $(id).style.flex = isOpen(id) ? `${grows[id]} 1 0` : "0 0 auto"; }
-function fitGraph() { if (cy && isOpen("graphPanel")) requestAnimationFrame(() => { cy.resize(); cy.fit(undefined, 40); }); }
+function fitGraph() { if (cy && isOpen("graphPanel")) requestAnimationFrame(() => { cy.resize(); cy.fit(undefined, 24); }); }
 function setArrows() { for (const id of PANELS) $(id).querySelector(".toggle").textContent = isOpen(id) ? "▾" : "▸"; }
 function syncResizers() { document.querySelectorAll(".resizer").forEach((rz) => { const [a, b] = rz.dataset.between.split(","); rz.classList.toggle("hidden", !(isOpen(a) && isOpen(b))); }); }
 function refreshPanels() { applyFlex(); setArrows(); syncResizers(); fitGraph(); saveState(); }

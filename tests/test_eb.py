@@ -584,5 +584,58 @@ class CaptureGoldenTest(unittest.TestCase):
         self.assertEqual(prov, {"fact-cache-tradeoff", "decision-lru-product-api"})
 
 
+class NamespaceDefaultVisibilityTest(unittest.TestCase):
+    """네임스페이스별 기본 visibility(접근제어자) 자동 적용."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        (self.dir / "nodes.csv").write_text(
+            "id,title,type,namespace,visibility,summary,confidence,tags,body\n",
+            encoding="utf-8")
+        (self.dir / "edges.csv").write_text(
+            "source,type,target,weight,note\n", encoding="utf-8")
+        (self.dir / "meta.csv").write_text(
+            "field,applies_to,description\nid,node,x\n", encoding="utf-8")
+
+    def _row(self, nid):
+        conn = eb.load_db(str(self.dir))
+        row = conn.execute(
+            "SELECT visibility, namespace FROM nodes WHERE id=?", (nid,)).fetchone()
+        conn.close()
+        return row
+
+    def test_default_applied_when_visibility_omitted(self):
+        eb.add_namespace(str(self.dir), name="novel-x", default_visibility="private")
+        eb.add_node(str(self.dir), id="nv1", title="등장인물",
+                    type="concept", namespace="novel-x")
+        row = self._row("nv1")
+        self.assertEqual(row["namespace"], "novel-x")
+        self.assertEqual(row["visibility"], "private")
+
+    def test_explicit_visibility_overrides_default(self):
+        eb.add_namespace(str(self.dir), name="novel-y", default_visibility="private")
+        eb.add_node(str(self.dir), id="nv2", title="공개", type="concept",
+                    namespace="novel-y", visibility="public")
+        self.assertEqual(self._row("nv2")["visibility"], "public")
+
+    def test_unregistered_namespace_leaves_visibility_empty(self):
+        eb.add_node(str(self.dir), id="nv3", title="무등록",
+                    type="note", namespace="ns-none")
+        self.assertEqual(self._row("nv3")["visibility"], "")
+
+    def test_add_namespace_rejects_invalid_visibility(self):
+        with self.assertRaises(ValueError):
+            eb.add_namespace(str(self.dir), name="bad", default_visibility="nonsense")
+
+    def test_add_namespace_upsert_preserves_and_updates(self):
+        eb.add_namespace(str(self.dir), name="novel-z",
+                         default_visibility="private", description="d1")
+        eb.add_namespace(str(self.dir), name="novel-z", default_visibility="namespace")
+        rows = {r["namespace"]: r for r in eb.list_namespaces(str(self.dir))}
+        self.assertEqual(rows["novel-z"]["default_visibility"], "namespace")
+        self.assertEqual(rows["novel-z"]["description"], "d1")
+        self.assertTrue(rows["novel-z"]["registered"])
+
+
 if __name__ == "__main__":
     unittest.main()

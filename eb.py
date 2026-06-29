@@ -47,6 +47,10 @@ NODE_COLS = [
 ]
 EDGE_COLS = ["source", "type", "target", "weight", "note"]
 
+NAMESPACES_FILE = "namespaces.csv"
+NAMESPACE_COLS = ["namespace", "default_visibility", "description"]
+ALLOWED_VISIBILITY = ("public", "namespace", "private", "system")
+
 
 # --------------------------------------------------------------------------- #
 # Load: 3 CSV -> SQLite ("csv를 db로")
@@ -56,6 +60,21 @@ def _read_csv(path: Path) -> list[dict]:
         return []
     with path.open(encoding="utf-8-sig", newline="") as f:
         return list(csv.DictReader(f))
+
+
+def namespace_default_visibility(data_dir: str, namespace: str):
+    """namespaces.csv 에 등록된 네임스페이스의 기본 visibility 를 돌려준다(없으면 None).
+
+    네임스페이스별 디폴트 접근제어자 — add-node 가 --visibility 를 안 줬을 때 적용한다.
+    """
+    ns = (namespace or "").strip()
+    if not ns:
+        return None
+    for r in _read_csv(Path(data_dir) / NAMESPACES_FILE):
+        if (r.get("namespace") or "").strip() == ns:
+            v = (r.get("default_visibility") or "").strip()
+            return v or None
+    return None
 
 
 CACHE_FILE = ".eb-cache.sqlite"   # data_dir 안의 자동 캐시(.gitignore 대상)
@@ -207,9 +226,13 @@ def add_node(data_dir: str, *, id: str, title: str, type: str = None,
     existing = {(r.get("id") or "").strip() for r in _read_csv(path)}
     if nid in existing:
         raise ValueError(f"이미 존재하는 노드 id: {nid}")
+    # visibility 미지정 시 네임스페이스 기본값(접근제어자)을 적용한다.
+    vis = (visibility or "").strip()
+    if not vis:
+        vis = namespace_default_visibility(data_dir, namespace) or ""
     _append_row(path, NODE_COLS, {
         "id": nid, "title": title or "", "type": type or "",
-        "namespace": namespace or "", "visibility": visibility or "",
+        "namespace": namespace or "", "visibility": vis,
         "summary": summary or "",
         "confidence": "" if confidence is None else confidence,
         "tags": tags or "", "body": body or "",
@@ -224,6 +247,60 @@ def _write_all(path: Path, cols: list[str], rows: list[dict]) -> None:
         w.writeheader()
         for r in rows:
             w.writerow({c: r.get(c, "") for c in cols})
+
+
+def add_namespace(data_dir: str, *, name: str, default_visibility: str = None,
+                  description: str = None) -> str:
+    """namespaces.csv 에 네임스페이스를 등록/갱신한다(멱등 upsert).
+
+    default_visibility 는 그 네임스페이스에서 새 노드의 기본 접근제어자다 — add-node 가
+    --visibility 를 생략하면 이 값이 적용된다. 잘못된 visibility 는 ValueError.
+    """
+    ns = (name or "").strip()
+    if not ns:
+        raise ValueError("namespace 이름은 비어 있을 수 없습니다")
+    vis = (default_visibility or "").strip()
+    if vis and vis not in ALLOWED_VISIBILITY:
+        raise ValueError(
+            f"default_visibility는 {'/'.join(ALLOWED_VISIBILITY)} 중 하나여야 합니다: {vis}")
+    path = Path(data_dir) / NAMESPACES_FILE
+    rows = _read_csv(path)
+    for r in rows:
+        if (r.get("namespace") or "").strip() == ns:
+            if vis:
+                r["default_visibility"] = vis
+            if description is not None:
+                r["description"] = description
+            break
+    else:
+        rows.append({"namespace": ns, "default_visibility": vis,
+                     "description": description or ""})
+    _write_all(path, NAMESPACE_COLS, rows)
+    return ns
+
+
+def list_namespaces(data_dir: str) -> list[dict]:
+    """등록된 네임스페이스 + 노드 수를 모은다(미등록이지만 노드가 쓰는 것도 포함)."""
+    base = Path(data_dir)
+    registered = {(r.get("namespace") or "").strip(): r
+                  for r in _read_csv(base / NAMESPACES_FILE)
+                  if (r.get("namespace") or "").strip()}
+    counts: dict[str, int] = {}
+    for n in _read_csv(base / NODES_FILE):
+        ns = (n.get("namespace") or "").strip()
+        if ns:
+            counts[ns] = counts.get(ns, 0) + 1
+    out = []
+    for ns in sorted(set(registered) | set(counts)):
+        reg = registered.get(ns)
+        out.append({
+            "namespace": ns,
+            "default_visibility": (reg or {}).get("default_visibility", "") if reg else "",
+            "description": (reg or {}).get("description", "") if reg else "",
+            "nodes": counts.get(ns, 0),
+            "registered": reg is not None,
+        })
+    return out
 
 
 def merge(data_dir: str, from_id: str, into_id: str) -> dict:
@@ -820,6 +897,15 @@ def main(argv=None):
     sp.add_argument("--tags", help="세미콜론(;) 구분")
     sp.add_argument("--body")
 
+    sp = sub.add_parser("add-namespace",
+                        help="namespaces.csv에 네임스페이스 등록/갱신(기본 visibility 설정)")
+    sp.add_argument("--name", required=True)
+    sp.add_argument("--default-visibility", dest="default_visibility",
+                    help="/".join(ALLOWED_VISIBILITY) + " 중 하나")
+    sp.add_argument("--description")
+
+    sub.add_parser("namespaces", help="등록된 네임스페이스 + 노드 수 목록")
+
     sp = sub.add_parser("merge", help="중복 노드 병합(from의 엣지를 into로 재배선 후 삭제)")
     sp.add_argument("from_id")
     sp.add_argument("into_id")
@@ -869,6 +955,30 @@ def main(argv=None):
         print(f"✓ 병합: {args.from_id} -> {r['into']} "
               f"(엣지 {r['repointed']}개 재배선, 자기 루프 {r['dropped_selfloops']}개 제거, "
               f"중복 {r['dropped_dups']}개 제거)")
+        return 0
+
+    if args.cmd == "add-namespace":
+        try:
+            ns = add_namespace(args.data, name=args.name,
+                               default_visibility=args.default_visibility,
+                               description=args.description)
+        except ValueError as ex:
+            print(f"✗ {ex}")
+            return 1
+        vis = namespace_default_visibility(args.data, ns) or "(없음)"
+        print(f"✓ 네임스페이스 등록: {ns}  기본 visibility={vis}")
+        return 0
+
+    if args.cmd == "namespaces":
+        rows = list_namespaces(args.data)
+        if not rows:
+            print("(등록된 네임스페이스 없음)")
+            return 0
+        for r in rows:
+            mark = "" if r["registered"] else "  [미등록]"
+            vis = r["default_visibility"] or "-"
+            print(f"  {r['namespace']}  기본visibility={vis}  노드={r['nodes']}{mark}"
+                  + (f"  — {r['description']}" if r["description"] else ""))
         return 0
 
     conn = load_db(args.data)   # 캐시는 자동(있고 최신이면 재사용, 아니면 재생성)

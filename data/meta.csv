@@ -2,8 +2,8 @@ field,applies_to,description
 id,node,고유 식별자(kebab-case ASCII). 예: pillar-knowledge-graph
 title,node,사람이 읽는 제목(한국어)
 type,node,노드 타입: pillar/decision/concept/question/playbook/fact/note/source 등
-namespace,node,상위 영역 그룹(personal/work/research 등)
-visibility,node,public/namespace/private/system 중 하나
+namespace,node,상위 영역 그룹(personal/work/research/novel-<제목> 등). namespaces.csv에 등록해 기본 visibility를 줄 수 있다
+visibility,node,public/namespace/private/system 중 하나. 미지정 시 네임스페이스 기본값이 적용됨
 summary,node,AI 스캐닝용 1~2문장 요약
 confidence,node,0.0~1.0 신뢰도
 tags,node,세미콜론(;) 구분 태그. 예: graph;schema
@@ -13,3 +13,6 @@ type,edge,엣지 타입: supports/depends_on/part_of/related_to/derived_from/con
 target,edge,관계의 도착 노드 id
 weight,edge,0.0~1.0 관계 강도
 note,edge,이 관계가 존재하는 이유(한국어)
+namespace,namespace,네임스페이스 슬러그(고유). 예: novel-<제목>
+default_visibility,namespace,그 네임스페이스 새 노드의 기본 visibility(미지정 시 자동 적용). public/namespace/private/system
+description,namespace,네임스페이스 설명

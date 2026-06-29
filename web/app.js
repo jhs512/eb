@@ -327,6 +327,7 @@ async function main() {
     $("q").addEventListener("input", (ev) => { if (classify(ev.target.value) !== "text") return; clearTimeout(timer); timer = setTimeout(runQueryFromBox, 200); });
     $("q").addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); runQueryFromBox(); } });
     $("chatform").addEventListener("submit", (ev) => { ev.preventDefault(); const v = $("chatin").value.trim(); if (v) { $("chatin").value = ""; chatAsk(v); } });
+    $("chatclear").addEventListener("click", () => { $("chatlog").innerHTML = ""; $("chatin").focus(); });
 
     document.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape") { $("helpModal").classList.add("hidden"); return; }

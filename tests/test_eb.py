@@ -202,17 +202,27 @@ class EbTest(unittest.TestCase):
         m = eb.export_mermaid(self.conn, only=only)
         self.assertNotIn("d[", m)
 
-    # --- 백로그 6: 파일 SQLite 적재/재사용 --------------------------------- #
-    def test_file_db_build_and_reuse(self):
-        db = self.dir / "graph.sqlite"
-        conn = eb.load_db(str(self.dir), str(db), rebuild=True)
+    # --- 백로그 6: 자동 SQLite 캐시(있으면 재사용, 바뀌면 재생성) --------- #
+    def test_autocache_created_and_reused(self):
+        self.conn.close()
+        conn = eb.load_db(str(self.dir))            # 첫 적재 → 캐시 생성
         self.assertEqual(eb.stats(conn)["nodes"], 5)
         conn.close()
-        self.assertTrue(db.exists())
-        # rebuild=False 면 CSV 재적재 없이 기존 테이블 사용
-        conn2 = eb.load_db(str(self.dir), str(db), rebuild=False)
+        self.assertTrue((self.dir / eb.CACHE_FILE).exists())
+        # 변경 없으면 캐시 적중(시그니처 일치) — 결과 동일
+        conn2 = eb.load_db(str(self.dir))
         self.assertEqual(eb.stats(conn2)["edges"], 4)
         conn2.close()
+
+    def test_autocache_rebuilds_on_csv_change(self):
+        self.conn.close()
+        eb.load_db(str(self.dir)).close()           # 캐시 생성
+        eb.add_node(str(self.dir), id="newzz", title="New", type="note")  # CSV 변경
+        conn = eb.load_db(str(self.dir))            # 시그니처 달라짐 → 재생성
+        self.assertEqual(eb.stats(conn)["nodes"], 6)
+        self.assertIsNotNone(
+            conn.execute("SELECT 1 FROM nodes WHERE id='newzz'").fetchone())
+        conn.close()
 
 
 def write_search_graph(d: Path):

@@ -5,7 +5,9 @@ body { display: flex; flex-direction: column; height: 100vh; color: #1c2230; }
 header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid #e4e7ee; flex-wrap: wrap; }
 header h1 { font-size: 18px; margin: 0; }
 .stats { color: #6b7280; font-size: 13px; }
-#q { margin-left: auto; width: 300px; max-width: 45vw; padding: 7px 11px; border: 1px solid #cbd2dd; border-radius: 8px; font-size: 14px; }
+.layout { margin-left: auto; border: 1px solid #cbd2dd; background: #fff; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; color: #374151; }
+.layout:hover { background: #f4f6fa; }
+#q { width: 280px; max-width: 40vw; padding: 7px 11px; border: 1px solid #cbd2dd; border-radius: 8px; font-size: 14px; }
 
 main { display: flex; flex: 1; min-height: 0; }
 .sidebar { width: 260px; border-right: 1px solid #e4e7ee; overflow: auto; background: #fbfcfe; }
@@ -16,8 +18,9 @@ main { display: flex; flex: 1; min-height: 0; }
 #list li .t { font-size: 11px; opacity: .65; }
 #list .empty { color: #9aa3b2; padding: 12px; font-size: 13px; }
 
-/* 패널 스택(세로) — 각 패널 접기/크기조절 */
-.center { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+/* 패널 — 상하(기본)/좌우 분할, 각 패널 접기/크기조절 */
+.center { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
+.center.horizontal { flex-direction: row; }
 .panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; flex: 1 1 0; }
 .panel.collapsed { flex: 0 0 auto; }              /* 최소화: 헤더만 */
 .phead { display: flex; align-items: center; gap: 8px; padding: 6px 14px; background: #f4f6fa;
@@ -27,7 +30,8 @@ main { display: flex; flex: 1; min-height: 0; }
 .pbody { flex: 1; min-height: 0; overflow: auto; }
 .panel.collapsed .pbody { display: none; }
 
-.resizer { height: 6px; background: #e4e7ee; cursor: row-resize; flex: 0 0 6px; }
+.resizer { flex: 0 0 6px; background: #e4e7ee; cursor: row-resize; }
+.center.horizontal .resizer { cursor: col-resize; }
 .resizer:hover { background: #cbd2dd; }
 .resizer.hidden { display: none; }                /* 한쪽이 접히면 숨김 */
 

@@ -37,8 +37,7 @@ from pathlib import Path
 
 TABS = [("nodes.csv", "NODE_TAB", "_data"),
         ("edges.csv", "EDGE_TAB", "_edges"),
-        ("meta.csv", "META_TAB", "_meta"),
-        ("namespaces.csv", "NAMESPACE_TAB", "_namespaces")]
+        ("meta.csv", "META_TAB", "_meta")]
 
 
 def _read_rows(path: Path) -> list[list[str]]:

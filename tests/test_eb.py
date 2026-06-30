@@ -637,5 +637,56 @@ class NamespaceDefaultVisibilityTest(unittest.TestCase):
         self.assertTrue(rows["novel-z"]["registered"])
 
 
+class NoColumnTest(unittest.TestCase):
+    """`no` 칼럼이 있는 그래프에서 add/merge 가 번호를 유지·재번호하는지."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        (self.dir / "nodes.csv").write_text(
+            "no,id,title,type,namespace,visibility,summary,confidence,tags,body\n"
+            "1,a,A,concept,personal,public,,0.9,,\n"
+            "2,b,B,concept,personal,public,,0.9,,\n",
+            encoding="utf-8")
+        (self.dir / "edges.csv").write_text(
+            "no,source,type,target,weight,note\n"
+            "1,a,related_to,b,0.5,\n",
+            encoding="utf-8")
+        (self.dir / "meta.csv").write_text("field,applies_to,description\n", encoding="utf-8")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _rows(self, fname):
+        return eb._read_csv(self.dir / fname)
+
+    def test_add_node_assigns_next_no(self):
+        eb.add_node(str(self.dir), id="c", title="C", type="note")
+        rows = self._rows("nodes.csv")
+        self.assertEqual(rows[-1]["no"], "3")
+        self.assertEqual(rows[-1]["id"], "c")
+
+    def test_add_edge_assigns_next_no(self):
+        eb.add_edge(str(self.dir), source="b", type="supports", target="a")
+        rows = self._rows("edges.csv")
+        self.assertEqual(rows[-1]["no"], "2")
+
+    def test_merge_renumbers_densely(self):
+        eb.add_node(str(self.dir), id="c", title="C", type="note")  # no 3
+        eb.merge(str(self.dir), "b", "a")                            # b 삭제 → 재번호
+        nos = [r["no"] for r in self._rows("nodes.csv")]
+        self.assertEqual(nos, ["1", "2"])                           # 조밀하게 1..N
+
+    def test_backward_compat_no_column_absent(self):
+        # `no` 없는 옛 스키마 파일엔 `no` 를 끼워넣지 않는다.
+        (self.dir / "nodes.csv").write_text(
+            "id,title,type,namespace,visibility,summary,confidence,tags,body\n"
+            "a,A,concept,personal,public,,0.9,,\n", encoding="utf-8")
+        eb.add_node(str(self.dir), id="z", title="Z", type="note")
+        rows = self._rows("nodes.csv")
+        self.assertNotIn("no", rows[0])
+        self.assertEqual(rows[-1]["id"], "z")
+
+
 if __name__ == "__main__":
     unittest.main()

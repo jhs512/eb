@@ -42,10 +42,16 @@ EDGES_FILE = "edges.csv"
 META_FILE = "meta.csv"
 
 NODE_COLS = [
-    "id", "title", "type", "namespace", "visibility",
+    "no", "id", "title", "type", "namespace", "visibility",
     "summary", "confidence", "tags", "body",
 ]
-EDGE_COLS = ["source", "type", "target", "weight", "note"]
+EDGE_COLS = ["no", "source", "type", "target", "weight", "note"]
+
+# `no`: 1부터의 표시용 일련번호(맨 앞 칼럼). 그래프 연산엔 안 쓰이고 CSV/시트 표시·
+# 위치 탐색용이다 — 시트에서 한 탭에 60행씩 끊어 미러하므로(Gemini Live가 한 번에
+# 읽는 행 한계 대응) "no N → 몇 번째 탭"을 바로 계산할 수 있다(탭 = ceil(N/60)).
+# 쓰기 경로는 헤더 기반이라 `no` 칼럼이 있는 파일에서만 유지·재번호하고, 없는(옛)
+# 파일은 그대로 둔다(하위호환).
 
 NAMESPACES_FILE = "namespaces.csv"
 NAMESPACE_COLS = ["namespace", "default_visibility", "description"]
@@ -198,6 +204,27 @@ def _to_float(v):
 # --------------------------------------------------------------------------- #
 # Write: CSV 안전 추가 (add-node / add-edge)
 # --------------------------------------------------------------------------- #
+def _file_cols(path: Path, default_cols: list[str]) -> list[str]:
+    """파일의 실제 헤더 칼럼을 돌려준다(없으면 default_cols).
+
+    쓰기를 헤더 기반으로 만들어, `no` 칼럼이 있는 파일은 그 스키마를 보존하고
+    없는(옛) 파일은 `no` 를 끼워넣지 않는다 — 하위호환."""
+    if path.exists() and path.stat().st_size > 0:
+        with path.open(encoding="utf-8-sig", newline="") as f:
+            header = next(csv.reader(f), None)
+        if header:
+            return header
+    return default_cols
+
+
+def _renumber(rows: list[dict], cols: list[str]) -> list[dict]:
+    """cols 가 `no` 로 시작하면 rows 의 `no` 를 1..N 으로 조밀하게 다시 매긴다(in-place)."""
+    if cols and cols[0] == "no":
+        for i, r in enumerate(rows, 1):
+            r["no"] = i
+    return rows
+
+
 def _append_row(path: Path, cols: list[str], row: dict) -> None:
     """CSV에 1행 안전 추가. 파일이 없으면 헤더부터, 마지막 줄에 개행이 없으면 보강한다."""
     has_data = path.exists() and path.stat().st_size > 0
@@ -223,20 +250,24 @@ def add_node(data_dir: str, *, id: str, title: str, type: str = None,
     if not nid:
         raise ValueError("id는 비어 있을 수 없습니다")
     path = Path(data_dir) / NODES_FILE
-    existing = {(r.get("id") or "").strip() for r in _read_csv(path)}
-    if nid in existing:
+    rows = _read_csv(path)
+    if nid in {(r.get("id") or "").strip() for r in rows}:
         raise ValueError(f"이미 존재하는 노드 id: {nid}")
     # visibility 미지정 시 네임스페이스 기본값(접근제어자)을 적용한다.
     vis = (visibility or "").strip()
     if not vis:
         vis = namespace_default_visibility(data_dir, namespace) or ""
-    _append_row(path, NODE_COLS, {
+    cols = _file_cols(path, NODE_COLS)
+    row = {
         "id": nid, "title": title or "", "type": type or "",
         "namespace": namespace or "", "visibility": vis,
         "summary": summary or "",
         "confidence": "" if confidence is None else confidence,
         "tags": tags or "", "body": body or "",
-    })
+    }
+    if "no" in cols:                 # 다음 일련번호(맨 끝에 붙으므로 행수+1)
+        row["no"] = len(rows) + 1
+    _append_row(path, cols, row)
     return nid
 
 
@@ -351,9 +382,11 @@ def merge(data_dir: str, from_id: str, into_id: str) -> dict:
             seen.add(key)
             repointed += 1
         new_edges.append(e)
-    _write_all(base / EDGES_FILE, EDGE_COLS, new_edges)
-    _write_all(base / NODES_FILE, NODE_COLS,
-               [r for r in nodes if (r.get("id") or "").strip() != f])
+    new_nodes = [r for r in nodes if (r.get("id") or "").strip() != f]
+    ecols = _file_cols(base / EDGES_FILE, EDGE_COLS)
+    ncols = _file_cols(base / NODES_FILE, NODE_COLS)
+    _write_all(base / EDGES_FILE, ecols, _renumber(new_edges, ecols))
+    _write_all(base / NODES_FILE, ncols, _renumber(new_nodes, ncols))
     return {"into": t, "repointed": repointed,
             "dropped_selfloops": dropped, "dropped_dups": dups}
 
@@ -375,10 +408,13 @@ def add_edge(data_dir: str, *, source: str, type: str, target: str,
         if missing:
             raise ValueError(
                 f"없는 노드 참조: {', '.join(missing)} (--allow-missing 으로 무시 가능)")
-    _append_row(base / EDGES_FILE, EDGE_COLS, {
-        "source": s, "type": type or "", "target": t,
-        "weight": "" if weight is None else weight, "note": note or "",
-    })
+    epath = base / EDGES_FILE
+    cols = _file_cols(epath, EDGE_COLS)
+    row = {"source": s, "type": type or "", "target": t,
+           "weight": "" if weight is None else weight, "note": note or ""}
+    if "no" in cols:
+        row["no"] = sum(1 for _ in _read_csv(epath)) + 1
+    _append_row(epath, cols, row)
     return (s, type, t)
 
 

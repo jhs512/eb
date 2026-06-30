@@ -32,12 +32,37 @@ import argparse
 import csv
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
-TABS = [("nodes.csv", "NODE_TAB", "_data"),
-        ("edges.csv", "EDGE_TAB", "_edges"),
-        ("meta.csv", "META_TAB", "_meta")]
+# (파일, 탭이름 override 환경변수, 기본 탭이름, 페이지 분할 여부)
+TABS = [("nodes.csv", "NODE_TAB", "_data", True),
+        ("edges.csv", "EDGE_TAB", "_edges", True),
+        ("meta.csv", "META_TAB", "_meta", False)]
+
+# 한 탭에 데이터(헤더 제외) 최대 행 수. 넘으면 `_data`/`_data2`/… 로 끊어 미러한다.
+# Gemini Live 가 시트를 한 번에 다 못 읽고 앞부분만 읽는 경우가 있어, 탭을 짧게 끊고
+# CSV `no` 칼럼으로 "no N → 탭 ceil(N/60)" 을 바로 찾게 하려는 것.
+ROWS_PER_PAGE = 60
+
+
+def _pages(tab: str, rows: list, paginate: bool) -> list:
+    """rows(헤더+데이터)를 탭 페이지로 나눈다 → [(탭이름, [헤더]+데이터청크), ...].
+
+    paginate=False 이거나 데이터가 ROWS_PER_PAGE 이하면 단일 탭. 2번째부터는
+    `<tab>2`, `<tab>3` … (첫 페이지는 접미사 없이 `<tab>`)."""
+    if not rows:
+        return []
+    header, data = rows[0], rows[1:]
+    if not paginate or len(data) <= ROWS_PER_PAGE:
+        return [(tab, rows)]
+    out = []
+    for i in range(0, len(data), ROWS_PER_PAGE):
+        k = i // ROWS_PER_PAGE
+        name = tab if k == 0 else f"{tab}{k + 1}"
+        out.append((name, [header] + data[i:i + ROWS_PER_PAGE]))
+    return out
 
 
 def _read_rows(path: Path) -> list[list[str]]:
@@ -101,14 +126,29 @@ def _client():
     return gspread.authorize(creds)
 
 
+def _tab_pattern(tab: str):
+    """`<tab>`, `<tab>2`, `<tab>3` … 페이지 탭을 매칭하는 정규식."""
+    return re.compile(rf"^{re.escape(tab)}\d*$")
+
+
 def sync(data_dir: str, dry_run: bool = False) -> int:
     base = Path(data_dir)
-    plan = []
-    for fname, env, default in TABS:
+    plan = []          # (탭이름, fname, rows) — 페이지 단위
+    page_tabs = []     # (기본탭, paginate, [이 기본탭의 desired 페이지 이름들])
+    for fname, env, default, paginate in TABS:
         rows = _read_rows(base / fname)
         tab = os.environ.get(env) or default   # 빈 문자열 override도 default로
-        plan.append((tab, fname, rows))
-        print(f"{fname} -> '{tab}' 탭: {len(rows)} 행" + (" (헤더 포함)" if rows else " (파일 없음/빈 파일)"))
+        pages = _pages(tab, rows, paginate)
+        page_tabs.append((tab, paginate, [n for n, _ in pages]))
+        for name, chunk in pages:
+            plan.append((name, fname, chunk))
+        if not rows:
+            print(f"{fname} -> '{tab}' 탭: (파일 없음/빈 파일)")
+        elif len(pages) == 1:
+            print(f"{fname} -> '{tab}' 탭: {len(rows)} 행 (헤더 포함)")
+        else:
+            print(f"{fname} -> {len(pages)}개 탭으로 분할({ROWS_PER_PAGE}행/탭): "
+                  + ", ".join(f"'{n}'({len(c) - 1}행)" for n, c in pages))
 
     if dry_run:
         print("[dry-run] 쓰기 없음.")
@@ -120,17 +160,31 @@ def sync(data_dir: str, dry_run: bool = False) -> int:
 
     gc = _client()
     sh = gc.open_by_key(sid)
+    existing = {ws.title: ws for ws in sh.worksheets()}
     for tab, fname, rows in plan:
         if not rows:
             continue
-        try:
-            ws = sh.worksheet(tab)
+        ws = existing.get(tab)
+        if ws is not None:
             ws.clear()
-        except Exception:
+        else:
             ws = sh.add_worksheet(title=tab, rows=max(len(rows) + 10, 20),
                                   cols=max(len(rows[0]) + 2, 10))
+            existing[tab] = ws
         ws.update(rows, value_input_option="RAW")
         print(f"✓ '{tab}' 갱신: {len(rows)} 행")
+
+    # 데이터가 줄어 더는 필요 없어진 옛 페이지 탭(`_data2` 등)을 정리한다.
+    desired = {name for name, _, _ in plan}
+    for tab, paginate, names in page_tabs:
+        if not paginate:
+            continue
+        pat = _tab_pattern(tab)
+        for title, ws in list(existing.items()):
+            if pat.match(title) and title not in desired:
+                sh.del_worksheet(ws)
+                del existing[title]
+                print(f"🗑 스테일 페이지 탭 삭제: '{title}'")
     print("동기화 완료.")
     return 0
 
@@ -146,18 +200,27 @@ def check(data_dir: str) -> int:
         sys.exit("SPREADSHEET_ID 환경변수가 필요합니다.")
     gc = _client()
     sh = gc.open_by_key(sid)
+    by_title = {ws.title: ws for ws in sh.worksheets()}
     drift = False
-    for fname, env, default in TABS:
+    for fname, env, default, paginate in TABS:
         rows = _read_rows(base / fname)
         if not rows:
             continue
         tab = os.environ.get(env) or default   # 빈 문자열 override도 default로
-        try:
-            ws = sh.worksheet(tab)
-            sheet_rows = ws.get_all_values()
-        except Exception:
-            print(f"✗ '{tab}' 탭 없음 (CSV에는 {len(rows)} 행)")
-            drift = True
+        pages = _pages(tab, rows, paginate)
+        # 페이지 탭들을 이어붙여(헤더는 첫 페이지 것만) 원천 CSV와 비교한다.
+        sheet_rows = []
+        missing = False
+        for k, (name, _chunk) in enumerate(pages):
+            ws = by_title.get(name)
+            if ws is None:
+                print(f"✗ '{name}' 탭 없음 (CSV에는 {len(rows)} 행)")
+                drift = True
+                missing = True
+                break
+            vals = ws.get_all_values()
+            sheet_rows += vals if k == 0 else vals[1:]   # 둘째 페이지부터 헤더 제거
+        if missing:
             continue
         d = diff_rows(rows, sheet_rows)
         if d["in_sync"]:

@@ -31,7 +31,4 @@ jobs:
         env:
           GOOGLE_SA_KEY: ${{ secrets.GOOGLE_SA_KEY }}
           SPREADSHEET_ID: ${{ vars.SPREADSHEET_ID }}
-          NODE_TAB: ${{ vars.NODE_TAB }}
-          EDGE_TAB: ${{ vars.EDGE_TAB }}
-          META_TAB: ${{ vars.META_TAB }}
         run: python sync.py --data data

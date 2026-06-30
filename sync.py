@@ -106,7 +106,7 @@ def sync(data_dir: str, dry_run: bool = False) -> int:
     plan = []
     for fname, env, default in TABS:
         rows = _read_rows(base / fname)
-        tab = os.environ.get(env, default)
+        tab = os.environ.get(env) or default   # 빈 문자열 override도 default로
         plan.append((tab, fname, rows))
         print(f"{fname} -> '{tab}' 탭: {len(rows)} 행" + (" (헤더 포함)" if rows else " (파일 없음/빈 파일)"))
 
@@ -151,7 +151,7 @@ def check(data_dir: str) -> int:
         rows = _read_rows(base / fname)
         if not rows:
             continue
-        tab = os.environ.get(env, default)
+        tab = os.environ.get(env) or default   # 빈 문자열 override도 default로
         try:
             ws = sh.worksheet(tab)
             sheet_rows = ws.get_all_values()
